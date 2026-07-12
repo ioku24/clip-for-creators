@@ -718,6 +718,20 @@ def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
     if sfx:
         apply_sfx(out, sfx, work)
 
+    # Edit map: where each SOURCE span ended up in the FINISHED video. Chapter
+    # markers and YouTube timestamps must be in output time — --tighten removes
+    # time, so a source timestamp is NOT where the viewer lands.
+    edl = work / f"{out_name}.edl.json"
+    edl.write_text(json.dumps({
+        "output": out.name,
+        "output_duration": duration_of(out),
+        "spans": [
+            {"source_start": round(a, 2), "source_end": round(b, 2),
+             "output_start": round(o, 2), "output_end": round(o + (b - a), 2)}
+            for (a, b), o in zip(render, offsets)
+        ],
+    }, indent=2))
+
     # Always drop a preview frame. This is how the framing gets checked: the
     # agent LOOKS at it. A center-crop silently decapitating an off-centre
     # speaker is the worst failure this tool has, and one glance catches it.
