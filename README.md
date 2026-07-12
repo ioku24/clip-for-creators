@@ -32,7 +32,7 @@ anywhere — the transcription happens on your machine.
 Cursor, Codex, Gemini CLI — they all support this), run:
 
 ```bash
-npx skills add <your-github-user>/clip-for-creators
+npx skills add ioku24/clip-for-creators
 ```
 
 That's it.

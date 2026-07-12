@@ -182,7 +182,10 @@ HILITE = "&H0000D7FF"  # ASS is &HAABBGGRR — this is amber
 
 
 def ass_escape(t):
-    return t.replace("{", "(").replace("}", ")").replace("\n", " ").strip()
+    t = t.replace("{", "(").replace("}", ")").replace("\n", " ")
+    # Whisper emits "%" and trailing punctuation as their own tokens, so a naive
+    # word-join gives "98 % OF MY". Reattach them.
+    return re.sub(r"\s+([%,.!?;:])", r"\1", t).strip()
 
 
 def caption_cues(segs, clip_start, clip_end):
@@ -257,6 +260,50 @@ def build_ass(segs, clip_start, clip_end, offset, path: Path, vertical: bool, em
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
+def smooth_concat(parts, out: Path, work: Path):
+    """Join parts with a short crossfade at every seam, video and audio together.
+
+    A hard cut between two moments of the SAME locked-off shot snaps the
+    speaker's head and hands to a new position — it reads as a glitch, not an
+    edit. A ~0.14s dissolve absorbs that. Falls back to a hard concat if any
+    part is too short to fade through.
+    """
+    durs = [float(run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                       "-of", "csv=p=0", str(p)]).stdout.strip()) for p in parts]
+    if min(durs) <= XFADE * 2:
+        lf = work / "list.txt"
+        lf.write_text("\n".join(f"file '{p.name}'" for p in parts))
+        run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0",
+             "-i", str(lf), "-c", "copy", str(out)])
+        return
+
+    # xfade offset for clip k = (total of everything before it) - k*XFADE,
+    # because each completed fade eats XFADE seconds off the running length.
+    offsets, acc = [], 0.0
+    for i in range(1, len(parts)):
+        acc += durs[i - 1]
+        offsets.append(acc - i * XFADE)
+
+    vf, af, v_prev, a_prev = [], [], "0:v", "0:a"
+    for i in range(1, len(parts)):
+        v_out, a_out = f"v{i}", f"a{i}"
+        vf.append(f"[{v_prev}][{i}:v]xfade=transition=fade:duration={XFADE}"
+                  f":offset={offsets[i - 1]:.3f}[{v_out}]")
+        af.append(f"[{a_prev}][{i}:a]acrossfade=d={XFADE}[{a_out}]")
+        v_prev, a_prev = v_out, a_out
+
+    cmd = ["ffmpeg", "-v", "error", "-y"]
+    for p in parts:
+        cmd += ["-i", str(p)]
+    cmd += ["-filter_complex", ";".join(vf + af),
+            "-map", f"[{v_prev}]", "-map", f"[{a_prev}]",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-pix_fmt", "yuv420p", "-r", "30",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "48000", str(out)]
+    run(cmd)
+    print(f"  smoothed {len(parts)} parts with {XFADE}s crossfades", flush=True)
+
+
 def finish(out: Path, hook: str, push: bool, vertical: bool, work: Path):
     """Final pass over the assembled clip: hook card + slow push.
 
@@ -312,8 +359,12 @@ def finish(out: Path, hook: str, push: bool, vertical: bool, work: Path):
 # purpose — they carry real meaning often enough that cutting them mangles
 # sentences, and a wrong cut is worse than an um left in.
 FILLERS = {"um", "umm", "uh", "uhh", "uhm", "erm", "er", "hmm", "mhm", "ah"}
-MAX_GAP = 0.55   # dead air longer than this inside a clip gets cut out
-MICRO_PAD = 0.06  # breathing room around each surviving sub-span
+# Was 0.55, which shredded a calm speaker into micro-cuts. A talking head needs
+# room to breathe — only genuinely dead air should go.
+MAX_GAP = 1.10
+MICRO_PAD = 0.12  # breathing room around each surviving sub-span
+XFADE = 0.14      # crossfade over every seam; a hard cut on a locked-off shot
+                  # snaps the head/hands and reads as a glitch, not an edit
 
 
 def tighten(segs, a, b):
@@ -367,7 +418,7 @@ def crop_9x16(video: Path) -> str:
 
 
 def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
-        emphasize=(), hook="", push=False):
+        emphasize=(), hook="", push=False, hard_cuts=False):
     need("ffmpeg")
     meta = json.loads((work / "transcript.json").read_text())
     segs = meta["segments"]
@@ -433,13 +484,16 @@ def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
         print(f"  render {i}: {a:.2f}–{b:.2f}s", flush=True)
 
     out = work / f"{out_name}.mp4"
-    if len(listing) == 1:
-        shutil.copy2(parts_dir / "part00.mp4", out)
-    else:
+    parts = sorted(parts_dir.glob("part*.mp4"))
+    if len(parts) == 1:
+        shutil.copy2(parts[0], out)
+    elif hard_cuts:
         lf = parts_dir / "list.txt"
         lf.write_text("\n".join(listing))
         run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0",
              "-i", str(lf), "-c", "copy", str(out)])
+    else:
+        smooth_concat(parts, out, parts_dir)
 
     finish(out, hook, push, vertical, work)
 
@@ -477,6 +531,8 @@ def main():
                    help=f"hook text over the first {HOOK_SECS}s (top of frame)")
     c.add_argument("--push", action="store_true",
                    help="slow continuous zoom across the clip (subtle; adds life)")
+    c.add_argument("--hard-cuts", action="store_true",
+                   help="join seams with hard cuts instead of the default crossfade")
 
     a = ap.parse_args()
 
@@ -508,7 +564,7 @@ def main():
             spans.append((float(lo), float(hi)))
         emph = tuple(w.strip().lower() for w in a.emphasize.split(",") if w.strip())
         cut(Path(a.work).expanduser().resolve(), spans, a.out,
-            a.vertical, a.captions, a.tighten, emph, a.hook, a.push)
+            a.vertical, a.captions, a.tighten, emph, a.hook, a.push, a.hard_cuts)
 
 
 if __name__ == "__main__":

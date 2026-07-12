@@ -79,30 +79,49 @@ What makes a clip actually work:
   never pad a 20-second idea to hit 45, and never guillotine a 70-second idea to
   hit 60.
 
-Stitching several spans into one clip is fine and often better — pair a hook
-with its payoff and drop the throat-clearing between them. That's how you get a
-tight 16 seconds out of 80.
+Prefer ONE continuous span. Multiple spans are allowed, but every seam is a cost
+— see below before you reach for one.
 
-### Storytelling: restructure before you decorate
+### Smoothness beats structure. Learned the hard way.
 
-**The highest-leverage edit is reordering, and it costs nothing.** Spans concat
-in the order you pass them, so you can cut against the order the words were
-actually spoken. People bury their best line six seconds in; a short cannot
-afford that wait.
+**Get the hook by choosing where to START — not by rearranging.**
 
-The shape that works — **CLAIM → TENSION → RELEASE**:
+The obvious idea is to reorder spans so the clip opens on the payoff. **Don't.**
+On a locked-off talking-head shot (car selfie, desk cam), splicing two different
+moments together snaps the speaker's head, hands, and gaze to new positions. It
+reads as a *glitch*, not an edit. The clip feels choppy and "still," and the
+viewer feels the seam even if they can't name it.
 
-1. **Lead with the payoff.** The number, the confession, the hard claim. First.
-2. **Then the tension** — the context that earns it, now playing as a flashback.
-3. **Then the release** — the resolution, and stop dead on it.
+That was a real rejected edit, not a hypothetical. The fix was simply to start
+the cut later:
 
-Worked example (`--clips "139:149.6,127.5:132.7,156.2:163.6"`):
-> "98% of my anxiety stemmed from social media." → "It was always checking how
-> many likes I got… am I blowing up yet?" → "And then when you delete the app,
-> it's gone. It's the most freeing feeling ever."
+> ❌ Reordered: `--clips "139:149.6,127.5:132.7,156.2:163.6"` → opens on the
+> number, but three hard seams. Choppy. Rejected.
+> ✅ Continuous: `--clips "139.06:163.64"` → *also* opens on the number, because
+> that's simply where her strong line begins. **Zero seams.**
 
-Same footage, same tool, no new dependency — and those three lines were spoken in
-a completely different order in the original.
+Almost always, the strong line is already somewhere in a continuous stretch that
+runs to a good ending. Find that stretch. **One unbroken take is the goal;**
+every seam is a cost you must justify.
+
+When you genuinely need multiple spans, seams are crossfaded automatically
+(`--hard-cuts` opts out). And keep `--tighten` gentle — it only removes dead air
+over ~1.1s, because shredding a calm speaker into micro-cuts is what makes an
+edit feel machine-made.
+
+### Don't put words in the creator's mouth
+
+**Never auto-title a clip.** The title, the hook text, the caption on the post —
+those are the creator's voice and the creator's call. Shipping a clip with a
+title you invented ("SHE QUIT SOCIAL MEDIA FOR 3 MONTHS") is you speaking as
+them. Hand them a clean clip; let them title it.
+
+`--hook` exists for when they *ask* for a specific line. It is not a default.
+
+**Keep captions one colour.** White, heavy outline, readable on mute. The
+`--emphasize` amber highlight was rejected as noisy — colour in the text pulls
+focus away from the face and looks templated. It's available if asked for; it is
+not a default.
 
 **Animation is NOT what makes a clip feel like a story.** A talking-head confessional
 works because a real person is telling you something true; motion graphics over
@@ -110,14 +129,10 @@ their face break that spell and land in the AI-slop uncanny valley. Reach for
 graphics only when they carry information the face cannot (a stat, a list, a
 before/after). **Animate the idea; never decorate the face.**
 
-The cheap devices that DO earn their place — all free, all ffmpeg:
+The one device that always earns its place:
 
-- `--hook "text"` — a line over the first 2.5s. The biggest retention lever in
-  short-form. Write it as the promise the clip pays off, not a summary.
-- `--push` — a slow continuous zoom. Invisible when it works; adds life to a
-  locked-off shot.
-- `--emphasize "98%,anxiety"` — ambers those words in the caption so the eye
-  lands on the claim instead of the filler around it.
+- `--push` — a slow continuous zoom. Invisible when it works; keeps a locked-off
+  shot alive without touching the frame's content.
 
 ### 3. Cut (render)
 

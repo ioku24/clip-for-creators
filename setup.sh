@@ -62,7 +62,7 @@ say "Done — you're ready"
 cat <<'EOF'
   Add the skill to your AI:
 
-    npx skills add <your-github-user>/clip-for-creators
+    npx skills add ioku24/clip-for-creators
 
   Then just talk to it:
 
