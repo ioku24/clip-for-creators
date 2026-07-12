@@ -228,6 +228,38 @@ that doesn't destroy what makes it work. The rules:
 Everything else is decoration. A cutaway that isn't carrying information is a
 cutaway that's costing you attention.
 
+### No B-roll? Generate the cutaway from their own frame.
+
+Most creators have no B-roll for most of what they say. `--card "START:DUR:TEXT"`
+builds an animated text cutaway **out of their own footage** — that moment,
+blurred and dimmed, with the words scaling up over it. Audio bridges through it;
+captions stay on top.
+
+```bash
+--card "1.4:1.8:98%"  --card "19.1:1.4:it's gone"
+```
+
+Why it's built from their frame and not a clean template: a template slide reads
+as *imported*. Their blurred face behind the word keeps the card inside their
+video. They never left; the camera just leaned in on the claim.
+
+The rules are tighter than for B-roll:
+
+- **The text must be THEIR OWN WORDS**, from the transcript, at the moment they
+  say them. This is kinetic typography — emphasising what they said. The instant
+  you write a line they never spoke, you're a title card, and you're speaking for
+  them. (See "Don't put words in the creator's mouth".)
+- **Cue it to a claim worth staring at** — the number, the admission, the
+  reversal. Not every sentence deserves a card; two in 25 seconds is plenty.
+- **Show them FIRST.** A card in the opening second is a title card wearing a
+  disguise. Let the viewer meet the person, *then* punctuate.
+- **Keep it short** (1–2s). It's punctuation, not a slide.
+
+Everything here runs on ffmpeg, so it works on any machine the skill installs on.
+Richer motion graphics (Remotion, Hyperframes) are a different, heavier tool —
+worth it for a produced piece, wrong for a confessional, and not portable to a
+creator who hasn't installed a Node toolchain.
+
 ## Known gaps (do these next, in this order)
 
 1. **Seam scoring.** Before cutting, sample frames around the cut point and score

@@ -476,9 +476,58 @@ def apply_broll(out: Path, brolls, work: Path, fps, vertical):
     shutil.move(final, out)
 
 
+def make_card(clip: Path, t, dur, text, work: Path, fps, vertical) -> Path:
+    """Generate an animated text card FROM THE CLIP'S OWN FRAMES — for creators
+    who have no B-roll.
+
+    The background is their own footage at that moment, blurred and darkened, so
+    the card stays inside their world instead of dropping in a foreign template
+    slide. The text scales and fades up. Audio bridges straight through it (the
+    caller overlays this like B-roll), so their voice never breaks.
+
+    The text should be THEIR OWN WORDS — the claim they are making right now.
+    This is kinetic typography, not a title card: we are emphasising what they
+    said, not speaking for them.
+    """
+    w, h = (1080, 1920) if vertical else (1920, 1080)
+    card = work / f"card-{t:.0f}.mp4"
+    ass = work / f"card-{t:.0f}.ass"
+
+    body = ass_escape(text).upper()
+    # Scale down for longer phrases so a sentence doesn't overflow the frame.
+    n = len(body)
+    size = (190 if n <= 6 else 140 if n <= 18 else 100) if vertical else 90
+    # \fad = fade in/out. \t(...\fscx/\fscy) = scale up over the first 400ms, so
+    # the words arrive with a push instead of just appearing.
+    anim = r"{\fad(180,220)\fscx88\fscy88\t(0,400,\fscx100\fscy100)}"
+    ass.write_text("\n".join([
+        "[Script Info]", "ScriptType: v4.00+",
+        f"PlayResX: {w}", f"PlayResY: {h}", "",
+        "[V4+ Styles]",
+        "Format: Name,Fontname,Fontsize,PrimaryColour,OutlineColour,BackColour,"
+        "Bold,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding",
+        f"Style: Card,Helvetica,{size},&H00FFFFFF,&H00000000,&H00000000,"
+        f"-1,1,0,0,5,90,90,90,1", "",
+        "[Events]",
+        "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text",
+        f"Dialogue: 0,0:00:00.00,{ts(dur)},Card,,0,0,0,,{anim}{body}",
+    ]), encoding="utf-8")
+
+    run(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-t", f"{dur:.3f}",
+         "-i", str(clip.resolve()),
+         # Blurred + dimmed, but she must still be READABLE underneath — that's
+         # what keeps the card hers instead of a template slide dropped on top.
+         "-vf", f"gblur=sigma=22,eq=brightness=-0.12:saturation=0.6,"
+                f"subtitles={ass.name},fps={fps}",
+         "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+         "-pix_fmt", "yuv420p", card.name], cwd=work)
+    print(f"  card @ {t:.1f}s for {dur:.1f}s: \"{text}\"", flush=True)
+    return card
+
+
 def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
         emphasize=(), hook="", push=False, use_xfade=False, max_gap=MAX_GAP,
-        loudnorm=True, crop_x=0.5, brolls=()):
+        loudnorm=True, crop_x=0.5, brolls=(), cards=()):
     need("ffmpeg")
     meta = json.loads((work / "transcript.json").read_text())
     segs = meta["segments"]
@@ -536,10 +585,16 @@ def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
     out = work / f"{out_name}.mp4"
     join(parts, out, parts_dir, fps, use_xfade)
 
-    # B-roll goes on BEFORE captions, so the captions stay legible on top of the
+    # Generated cards are just B-roll we made ourselves — same audio bridge, same
+    # overlay path. Built from the assembled clip so they inherit its framing.
+    inserts = list(brolls)
+    for t, dur, text in cards:
+        inserts.append((t, dur, str(make_card(out, t, dur, text, work, fps, vertical))))
+
+    # Inserts go on BEFORE captions, so captions stay legible on top of the
     # cutaway. A cutaway that hides the words defeats the point of the words.
-    if brolls:
-        apply_broll(out, brolls, work, fps, vertical)
+    if inserts:
+        apply_broll(out, sorted(inserts), work, fps, vertical)
 
     # Where each source span landed on the finished timeline — this is what lets
     # captions be burned last, over the assembled clip.
@@ -632,6 +687,9 @@ def main():
     c.add_argument("--broll", default="",
                    help="cutaways, keeping her audio running: "
                         "'START:DURATION:/path/clip.mp4' — comma-separated for several")
+    c.add_argument("--card", action="append", default=[],
+                   help="generated text cutaway for creators with no b-roll: "
+                        "'START:DURATION:THEIR OWN WORDS'. Repeatable.")
 
     a = ap.parse_args()
 
@@ -668,9 +726,16 @@ def main():
             if not path:
                 sys.exit(f"--broll needs START:DURATION:PATH, got: {spec}")
             brolls.append((float(t), float(dur), path))
+        cards = []
+        for spec in a.card:
+            t, _, rest = spec.partition(":")
+            dur, _, text = rest.partition(":")
+            if not text:
+                sys.exit(f"--card needs START:DURATION:TEXT, got: {spec}")
+            cards.append((float(t), float(dur), text))
         cut(Path(a.work).expanduser().resolve(), spans, a.out,
             a.vertical, a.captions, a.tighten, emph, a.hook, a.push,
-            a.xfade, a.max_gap, not a.no_loudnorm, a.crop_x, brolls)
+            a.xfade, a.max_gap, not a.no_loudnorm, a.crop_x, brolls, cards)
 
 
 if __name__ == "__main__":
