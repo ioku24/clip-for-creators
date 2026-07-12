@@ -367,10 +367,19 @@ def write_ass(cues, path: Path, vertical, emphasize=(), hook=""):
 # ----------------------------------------------------------------- render
 
 
-def crop_9x16(video: Path) -> str:
-    """Numbers computed here, not in ffmpeg's expression language — an expression
+def crop_9x16(video: Path, crop_x=0.5) -> str:
+    """9:16 crop. `crop_x` is where the keep-window sits horizontally: 0.0 = hard
+    left, 0.5 = centre, 1.0 = hard right.
+
+    There is no face detection here on purpose. The agent driving this tool can
+    SEE — every render drops a preview frame, so it looks at the framing and
+    shifts crop_x if the speaker is off-centre. That beats bolting OpenCV onto a
+    non-technical user's machine to solve a problem a pair of eyes solves free.
+
+    Numbers computed here, not in ffmpeg's expression language: an expression
     like min(iw,ih*9/16) contains a comma, which the filtergraph parser eats as a
-    filter separator."""
+    filter separator.
+    """
     w, h = (int(x) for x in probe(video, "stream=width,height", "v:0").split(",")[:2])
     if w / h > 9 / 16:
         cw, ch = int(h * 9 / 16), h
@@ -378,7 +387,9 @@ def crop_9x16(video: Path) -> str:
         cw, ch = w, int(w * 16 / 9)
     cw -= cw % 2
     ch -= ch % 2
-    return f"crop={cw}:{ch}:{(w - cw) // 2}:{(h - ch) // 2},scale=1080:1920"
+    x = int((w - cw) * min(max(crop_x, 0.0), 1.0))
+    x -= x % 2
+    return f"crop={cw}:{ch}:{x}:{(h - ch) // 2},scale=1080:1920"
 
 
 def join(parts, out: Path, work: Path, fps, use_xfade):
@@ -423,9 +434,51 @@ def join(parts, out: Path, work: Path, fps, use_xfade):
     run(cmd)
 
 
+def apply_broll(out: Path, brolls, work: Path, fps, vertical):
+    """Cut away to other footage while HER AUDIO KEEPS RUNNING.
+
+    This is the audio bridge, and it's the only honest way to add B-roll to a
+    confessional: the voice never breaks, so the intimacy survives, but the eye
+    gets something new. Never mute the speaker to show a stock clip — that's how
+    you get a video that looks produced and says nothing.
+
+    B-roll should be the CREATOR'S OWN footage, cued to a moment where they name
+    something concrete ("I posted a video behind Zedd"). Generated/stock filler
+    over a personal story is the slop we're trying to avoid.
+    """
+    w, h = (1080, 1920) if vertical else (1920, 1080)
+    cmd = ["ffmpeg", "-v", "error", "-y", "-i", str(out.resolve())]
+    filters, prev = [], "0:v"
+
+    for i, (t, dur, path) in enumerate(brolls, start=1):
+        src = Path(path).expanduser()
+        if not src.exists():
+            sys.exit(f"b-roll not found: {src}")
+        cmd += ["-i", str(src.resolve())]
+        filters.append(
+            f"[{i}:v]trim=0:{dur},setpts=PTS-STARTPTS+{t}/TB,"
+            f"scale={w}:{h}:force_original_aspect_ratio=increase,"
+            f"crop={w}:{h},fps={fps}[b{i}]"
+        )
+        # enable= window, so the cutaway appears only for its span. Audio is
+        # never touched — we map 0:a straight through below.
+        filters.append(
+            f"[{prev}][b{i}]overlay=0:0:enable='between(t,{t},{t + dur})'[v{i}]")
+        prev = f"v{i}"
+        print(f"  b-roll @ {t:.1f}s for {dur:.1f}s: {src.name}", flush=True)
+
+    final = work / f"{out.stem}-broll.mp4"
+    cmd += ["-filter_complex", ";".join(filters),
+            "-map", f"[{prev}]", "-map", "0:a",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-pix_fmt", "yuv420p", "-r", str(fps), "-c:a", "copy", final.name]
+    run(cmd, cwd=work)
+    shutil.move(final, out)
+
+
 def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
         emphasize=(), hook="", push=False, use_xfade=False, max_gap=MAX_GAP,
-        loudnorm=True):
+        loudnorm=True, crop_x=0.5, brolls=()):
     need("ffmpeg")
     meta = json.loads((work / "transcript.json").read_text())
     segs = meta["segments"]
@@ -463,7 +516,7 @@ def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
         shutil.rmtree(parts_dir)
     parts_dir.mkdir()
 
-    crop = crop_9x16(video) if vertical else None
+    crop = crop_9x16(video, crop_x) if vertical else None
     parts = []
     for i, (a, b) in enumerate(render):
         part = parts_dir / f"part{i:04d}.mp4"
@@ -482,6 +535,11 @@ def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
 
     out = work / f"{out_name}.mp4"
     join(parts, out, parts_dir, fps, use_xfade)
+
+    # B-roll goes on BEFORE captions, so the captions stay legible on top of the
+    # cutaway. A cutaway that hides the words defeats the point of the words.
+    if brolls:
+        apply_broll(out, brolls, work, fps, vertical)
 
     # Where each source span landed on the finished timeline — this is what lets
     # captions be burned last, over the assembled clip.
@@ -522,7 +580,16 @@ def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
         run(cmd, cwd=work)
         shutil.move(final, out)
 
+    # Always drop a preview frame. This is how the framing gets checked: the
+    # agent LOOKS at it. A center-crop silently decapitating an off-centre
+    # speaker is the worst failure this tool has, and one glance catches it.
+    preview = work / f"{out_name}-frame.jpg"
+    run(["ffmpeg", "-v", "error", "-y", "-ss", f"{min(1.0, duration_of(out) / 3):.2f}",
+         "-i", str(out.resolve()), "-frames:v", "1", preview.name], cwd=work)
+
     print(f"\n{out}  ({duration_of(out):.1f}s, {fps}fps)")
+    print(f"preview frame: {preview}   <- LOOK AT THIS. If the speaker is cropped "
+          f"badly, re-run with --crop-x (0=left, 0.5=centre, 1=right).")
     return out
 
 
@@ -559,6 +626,12 @@ def main():
     c.add_argument("--xfade", action="store_true",
                    help="crossfade seams instead of hard-cutting them")
     c.add_argument("--no-loudnorm", action="store_true", help="skip loudness normalisation")
+    c.add_argument("--crop-x", type=float, default=0.5,
+                   help="horizontal crop position: 0=left, 0.5=centre, 1=right. "
+                        "Check the preview frame and shift this if the speaker is cut off.")
+    c.add_argument("--broll", default="",
+                   help="cutaways, keeping her audio running: "
+                        "'START:DURATION:/path/clip.mp4' — comma-separated for several")
 
     a = ap.parse_args()
 
@@ -588,9 +661,16 @@ def main():
             lo, _, hi = chunk.strip().partition(":")
             spans.append((float(lo), float(hi)))
         emph = tuple(w.strip().lower() for w in a.emphasize.split(",") if w.strip())
+        brolls = []
+        for spec in filter(None, (s.strip() for s in a.broll.split(","))):
+            t, _, rest = spec.partition(":")
+            dur, _, path = rest.partition(":")   # path may itself contain ':'
+            if not path:
+                sys.exit(f"--broll needs START:DURATION:PATH, got: {spec}")
+            brolls.append((float(t), float(dur), path))
         cut(Path(a.work).expanduser().resolve(), spans, a.out,
             a.vertical, a.captions, a.tighten, emph, a.hook, a.push,
-            a.xfade, a.max_gap, not a.no_loudnorm)
+            a.xfade, a.max_gap, not a.no_loudnorm, a.crop_x, brolls)
 
 
 if __name__ == "__main__":

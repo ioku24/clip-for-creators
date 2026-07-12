@@ -192,17 +192,49 @@ Source frame rate is preserved (60fps stays 60fps). Captions are burned **last**
 over the finished timeline — never into the parts, or `--push` would zoom them
 and seams would dissolve caption pixels.
 
+### Framing: LOOK at the preview frame
+
+Every render writes `<out>-frame.jpg`. **Open it.** `--vertical` is a plain
+center-crop — it is correct for a centred talking head and it will cheerfully
+decapitate anyone standing off to one side (outdoor vlogs, two-person shots,
+anything handheld). This is the tool's worst failure, because it fails
+*silently* and hands back a confident, broken clip.
+
+You have eyes. Use them: if the speaker is off-centre or clipped, re-run with
+`--crop-x` (0 = hard left, 0.5 = centre, 1 = hard right). One glance costs
+nothing; a decapitated clip costs the creator's trust.
+
+### B-roll: bridge the audio, never break the voice
+
+`--broll "START:DURATION:/path/clip.mp4"` cuts away to other footage **while the
+speaker's audio keeps running.** The voice never breaks, so the intimacy
+survives, but the eye gets something new. Captions stay on top of the cutaway.
+
+This is the honest way to add visuals to a personal story — and the *only* way
+that doesn't destroy what makes it work. The rules:
+
+- **Use the creator's OWN footage.** They said "I posted a video behind Zedd" —
+  cut to *their* Vegas clip. Stock video and generated filler over a confession
+  is exactly the AI slop we're avoiding; it makes the video look produced and say
+  nothing.
+- **Cue it to a concrete noun.** Scan the transcript for moments where they name
+  something you could actually *show*: a place, a product, a number, a receipt, a
+  screenshot, a person. Those are the only moments that earn a cutaway.
+- **Never mute the speaker to show a picture.** If the audio drops, you've made a
+  slideshow.
+- **Propose, don't impose.** Tell the creator "at 0:12 you mention X — do you have
+  footage of that?" You cannot invent their b-roll for them.
+
+Everything else is decoration. A cutaway that isn't carrying information is a
+cutaway that's costing you attention.
+
 ## Known gaps (do these next, in this order)
 
-1. **Face-aware crop.** `--vertical` is a naive center-crop; it decapitates an
-   off-centre speaker. Detect the face and crop around it.
-2. **Seam scoring.** Before cutting, sample frames around the cut point and score
-   face position / mouth / hands / motion. That tells you where a jump cut will
+1. **Seam scoring.** Before cutting, sample frames around the cut point and score
+   face position / mouth / hands / motion — tells you where a jump cut will
    actually work instead of guessing.
-3. **Phrase-aware captions.** Chunking every 4 words is mechanical; build readable
+2. **Phrase-aware captions.** Chunking every 4 words is mechanical; build readable
    phrase units and balance the lines.
-4. **Cutaways.** When the transcript names a number, brand, tweet or chart,
-   consider an insert. That's how a hard claim becomes believable.
 
 Cuts are padded slightly (0.20s head / 0.35s tail) so they don't shave breaths
 or clip final consonants. Clips are re-encoded rather than stream-copied,
@@ -211,12 +243,13 @@ words you chose.
 
 ## Where this sits
 
-`/clip` **cuts footage that already exists.** That's all it does, and it does it
-for free.
+`/clip` **cuts footage that exists.** It is the free, local, unmetered layer.
 
-It is not the tool for *polishing* a take (studio-grade audio cleanup — Descript
-and similar own that), and it is not the tool for *creating* footage that never
-existed (motion graphics, animated intros — Remotion, Hyperframes, After Effects).
+- To *polish* a take — Studio Sound, filler-word removal, studio captions — use
+  **Descript** (MCP is connected; costs AI credits; note it has no local export,
+  only publish-to-link).
+- To *create footage that never existed* — intros, lower-thirds, motion graphics,
+  data animations — use **Remotion** or **Hyperframes** (code → MP4).
 
 Don't reach for a paid or generative tool to do a job ffmpeg does for free.
 

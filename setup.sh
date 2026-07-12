@@ -10,36 +10,24 @@ no()  { printf '  \033[33m→\033[0m %s\n' "$*"; }
 say "Checking what you already have"
 
 MISSING=()
-for t in ffmpeg yt-dlp; do
-  if command -v "$t" >/dev/null 2>&1; then ok "$t"; else no "$t — will install"; MISSING+=("$t"); fi
+# openai-whisper goes through Homebrew too. `pip install --user openai-whisper`
+# looks tidier but dies on PEP 668 ("externally-managed-environment") on any
+# modern Homebrew python — which is exactly the machine most people are on.
+for t in ffmpeg yt-dlp openai-whisper; do
+  bin="$t"; [ "$t" = "openai-whisper" ] && bin="whisper"
+  if command -v "$bin" >/dev/null 2>&1; then ok "$bin"; else no "$bin — will install"; MISSING+=("$t"); fi
 done
-
-if command -v whisper >/dev/null 2>&1; then
-  ok "whisper"
-  NEED_WHISPER=0
-else
-  no "whisper — will install"
-  NEED_WHISPER=1
-fi
 
 if [ ${#MISSING[@]} -gt 0 ]; then
   if ! command -v brew >/dev/null 2>&1; then
-    say "Homebrew is required to install ${MISSING[*]}"
+    say "Homebrew is required to install: ${MISSING[*]}"
     echo "  Install it first (one line, from https://brew.sh):"
     echo '    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
     echo "  Then re-run this script."
     exit 1
   fi
-  say "Installing ${MISSING[*]}"
+  say "Installing: ${MISSING[*]}"
   brew install "${MISSING[@]}"
-fi
-
-if [ "$NEED_WHISPER" -eq 1 ]; then
-  say "Installing whisper (speech-to-text, runs on your machine)"
-  command -v python3 >/dev/null 2>&1 || { echo "  python3 not found — install it, then re-run."; exit 1; }
-  # --user keeps this out of the system python; pipx would be tidier but is one
-  # more thing to install, and this is a gift, not a platform.
-  python3 -m pip install --user --quiet --upgrade openai-whisper
 fi
 
 say "Verifying"
@@ -51,10 +39,7 @@ for t in ffmpeg yt-dlp whisper; do
 done
 
 if [ "$FAIL" -eq 1 ]; then
-  say "Something didn't land"
-  echo "  If whisper is missing, its install dir may not be on your PATH. Try:"
-  echo "    export PATH=\"\$(python3 -m site --user-base)/bin:\$PATH\""
-  echo "  Add that line to ~/.zshrc to make it stick."
+  say "Something did not land — see the errors above, then re-run."
   exit 1
 fi
 
