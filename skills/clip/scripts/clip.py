@@ -476,6 +476,81 @@ def apply_broll(out: Path, brolls, work: Path, fps, vertical):
     shutil.move(final, out)
 
 
+def apply_overlay(out: Path, overlays, work: Path, fps, vertical):
+    """Composite an ALPHA motion graphic OVER the footage — she stays visible
+    underneath. This is different from --broll, which replaces the frame.
+
+    Source must carry a real alpha channel. Render it from Remotion or
+    Hyperframes as **ProRes 4444 (.mov)** — `--format webm` comes out yuv420p
+    (opaque) and will paste a black box over her face. Check with:
+        ffprobe -show_entries stream=pix_fmt   ->  want yuva*, not yuv420p
+    """
+    w, h = (1080, 1920) if vertical else (1920, 1080)
+    cmd = ["ffmpeg", "-v", "error", "-y", "-i", str(out.resolve())]
+    filters, prev = [], "0:v"
+
+    for i, (t, dur, path) in enumerate(overlays, start=1):
+        src = Path(path).expanduser()
+        if not src.exists():
+            sys.exit(f"overlay not found: {src}")
+        pix = probe(src, "stream=pix_fmt", "v:0")
+        if not pix.startswith("yuva") and "argb" not in pix and "rgba" not in pix:
+            sys.exit(f"overlay '{src.name}' has no alpha channel (pix_fmt={pix}).\n"
+                     f"Re-render it as ProRes 4444 .mov — an opaque overlay will "
+                     f"paste a solid box over the speaker.")
+        cmd += ["-i", str(src.resolve())]
+        # format=yuva420p keeps alpha alive through the scale.
+        filters.append(
+            f"[{i}:v]trim=0:{dur},setpts=PTS-STARTPTS+{t}/TB,"
+            f"scale={w}:{h},format=yuva420p,fps={fps}[g{i}]")
+        filters.append(
+            f"[{prev}][g{i}]overlay=0:0:enable='between(t,{t},{t + dur})'[v{i}]")
+        prev = f"v{i}"
+        print(f"  overlay @ {t:.1f}s for {dur:.1f}s: {src.name}  (alpha: {pix})", flush=True)
+
+    final = work / f"{out.stem}-ov.mp4"
+    cmd += ["-filter_complex", ";".join(filters),
+            "-map", f"[{prev}]", "-map", "0:a",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-pix_fmt", "yuv420p", "-r", str(fps), "-c:a", "copy", final.name]
+    run(cmd, cwd=work)
+    shutil.move(final, out)
+
+
+def apply_sfx(out: Path, sfx, work: Path):
+    """Mix sound effects UNDER the speaker's voice at given timestamps.
+
+    Motion graphics rendered from Remotion/HyperFrames come out SILENT — the
+    overlay is a video track with no audio. A notification popping in with no
+    sound reads as a bug, not a choice. The pops are half the effect.
+
+    amix with normalize=0 is load-bearing: the default normalize=1 divides every
+    input by N, so adding two blips would quietly duck her voice by ~10dB.
+    """
+    cmd = ["ffmpeg", "-v", "error", "-y", "-i", str(out.resolve())]
+    filters, labels = [], []
+
+    for i, (t, gain, path) in enumerate(sfx, start=1):
+        src = Path(path).expanduser()
+        if not src.exists():
+            sys.exit(f"sfx not found: {src}")
+        cmd += ["-i", str(src.resolve())]
+        filters.append(f"[{i}:a]adelay={int(t * 1000)}:all=1,volume={gain}[s{i}]")
+        labels.append(f"[s{i}]")
+
+    filters.append(
+        f"[0:a]{''.join(labels)}amix=inputs={len(sfx) + 1}:duration=first"
+        f":normalize=0,alimiter=limit=0.97[aout]")
+
+    final = work / f"{out.stem}-sfx.mp4"
+    cmd += ["-filter_complex", ";".join(filters),
+            "-map", "0:v", "-map", "[aout]",
+            "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", final.name]
+    run(cmd, cwd=work)
+    shutil.move(final, out)
+    print(f"  mixed {len(sfx)} sfx under the voice", flush=True)
+
+
 def make_card(clip: Path, t, dur, text, work: Path, fps, vertical) -> Path:
     """Generate an animated text card FROM THE CLIP'S OWN FRAMES — for creators
     who have no B-roll.
@@ -527,7 +602,7 @@ def make_card(clip: Path, t, dur, text, work: Path, fps, vertical) -> Path:
 
 def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
         emphasize=(), hook="", push=False, use_xfade=False, max_gap=MAX_GAP,
-        loudnorm=True, crop_x=0.5, brolls=(), cards=()):
+        loudnorm=True, crop_x=0.5, brolls=(), cards=(), overlays=(), sfx=()):
     need("ffmpeg")
     meta = json.loads((work / "transcript.json").read_text())
     segs = meta["segments"]
@@ -596,6 +671,11 @@ def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
     if inserts:
         apply_broll(out, sorted(inserts), work, fps, vertical)
 
+    # Alpha graphics composite OVER her (she stays visible), unlike b-roll which
+    # replaces the frame. Still before captions, so captions read on top.
+    if overlays:
+        apply_overlay(out, sorted(overlays), work, fps, vertical)
+
     # Where each source span landed on the finished timeline — this is what lets
     # captions be burned last, over the assembled clip.
     offsets, acc = [], 0.0
@@ -634,6 +714,9 @@ def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
         cmd += [final.name]
         run(cmd, cwd=work)
         shutil.move(final, out)
+
+    if sfx:
+        apply_sfx(out, sfx, work)
 
     # Always drop a preview frame. This is how the framing gets checked: the
     # agent LOOKS at it. A center-crop silently decapitating an off-centre
@@ -687,6 +770,14 @@ def main():
     c.add_argument("--broll", default="",
                    help="cutaways, keeping her audio running: "
                         "'START:DURATION:/path/clip.mp4' — comma-separated for several")
+    c.add_argument("--overlay", action="append", default=[],
+                   help="alpha motion graphic composited OVER the speaker: "
+                        "'START:DURATION:/path/graphic.mov'. Must be ProRes 4444 "
+                        "(.mov) — webm/mp4 have no alpha. Repeatable.")
+    c.add_argument("--sfx", action="append", default=[],
+                   help="sound effect under the voice: 'TIME:GAIN:/path/sound.wav' "
+                        "(gain 0.0-1.0). Motion graphics render silent — add the pops. "
+                        "Repeatable.")
     c.add_argument("--card", action="append", default=[],
                    help="generated text cutaway for creators with no b-roll: "
                         "'START:DURATION:THEIR OWN WORDS'. Repeatable.")
@@ -733,9 +824,24 @@ def main():
             if not text:
                 sys.exit(f"--card needs START:DURATION:TEXT, got: {spec}")
             cards.append((float(t), float(dur), text))
+        overlays = []
+        for spec in a.overlay:
+            t, _, rest = spec.partition(":")
+            dur, _, path = rest.partition(":")
+            if not path:
+                sys.exit(f"--overlay needs START:DURATION:PATH, got: {spec}")
+            overlays.append((float(t), float(dur), path))
+        sfx = []
+        for spec in a.sfx:
+            t, _, rest = spec.partition(":")
+            gain, _, path = rest.partition(":")
+            if not path:
+                sys.exit(f"--sfx needs TIME:GAIN:PATH, got: {spec}")
+            sfx.append((float(t), float(gain), path))
         cut(Path(a.work).expanduser().resolve(), spans, a.out,
             a.vertical, a.captions, a.tighten, emph, a.hook, a.push,
-            a.xfade, a.max_gap, not a.no_loudnorm, a.crop_x, brolls, cards)
+            a.xfade, a.max_gap, not a.no_loudnorm, a.crop_x, brolls, cards,
+            overlays, sfx)
 
 
 if __name__ == "__main__":
