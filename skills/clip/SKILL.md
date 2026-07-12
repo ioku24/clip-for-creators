@@ -211,14 +211,12 @@ words you chose.
 
 ## Where this sits
 
-`/clip` **cuts footage that exists.** It is the free, local, unmetered layer.
+`/clip` **cuts footage that already exists.** That's all it does, and it does it
+for free.
 
-- To *polish* a take — Studio Sound, filler-word removal, studio captions — use
-  **Descript** (MCP is connected; costs AI credits; note it has no local export,
-  only publish-to-link).
-- To *create footage that never existed* — intros, lower-thirds, motion graphics,
-  data animations — use **Remotion** (React → MP4, live project at
-  `~/Building/Clients/client-UGM/ugm-sizzle`) or **Hyperframes** (HTML/CSS → MP4).
+It is not the tool for *polishing* a take (studio-grade audio cleanup — Descript
+and similar own that), and it is not the tool for *creating* footage that never
+existed (motion graphics, animated intros — Remotion, Hyperframes, After Effects).
 
 Don't reach for a paid or generative tool to do a job ffmpeg does for free.
 
