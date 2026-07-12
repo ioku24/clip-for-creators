@@ -57,9 +57,22 @@ is the failure mode that turns this from a tool into a slot machine.
 - **Hard numbers** — "98% of my anxiety came from social media" beats "a lot of
   my anxiety did."
 - **Emotional peaks** — admissions, failures, turning points.
-- **Questions that indict the viewer** — a clip that *ends* on an unanswered
-  question drives comments harder than one that resolves.
-- **Named-and-shamed specifics** — a brand, a price, a real story with stakes.
+- **Named specifics** — a brand, a price, a real story with stakes.
+
+Then apply the two filters that actually separate a good clip from a cheap one:
+
+- **Editorial truth.** Does the moment have its own setup, escalation, and
+  payoff — and does it still mean what the speaker meant? A clip that only works
+  because you stripped its context is a lie you made out of their words. Do not
+  cut it, however well it would perform.
+- **Visual feasibility.** A great transcript moment can be an unusable clip. If
+  the cut points land mid-gesture, mid-blink, or on a lurch of the camera, the
+  words don't save it. The transcript tells you *what*; you still owe the footage
+  a look before you commit.
+
+Don't chase engagement bait. "End on a question that indicts the viewer" will
+reliably produce cheap clips; end on a question when the speaker actually asked
+one.
 
 What makes a clip actually work:
 
@@ -104,10 +117,26 @@ Almost always, the strong line is already somewhere in a continuous stretch that
 runs to a good ending. Find that stretch. **One unbroken take is the goal;**
 every seam is a cost you must justify.
 
-When you genuinely need multiple spans, seams are crossfaded automatically
-(`--hard-cuts` opts out). And keep `--tighten` gentle — it only removes dead air
-over ~1.1s, because shredding a calm speaker into micro-cuts is what makes an
-edit feel machine-made.
+**When you DO need a seam, declare it — don't dissolve it.** A crossfade between
+two positions of the same face advertises the discontinuity instead of hiding it;
+it's the soft, dated look. Short-form lives on hard cuts. What makes a jump cut
+read as intentional rather than broken:
+
+- **Cut on a blink, a head turn, or a gesture** — motion masks the jump.
+- **Change the framing at the seam** (100% → 104% → 108%). A punch-in says "this
+  is an edit," and the eye forgives it instantly.
+- **Cut away** — to b-roll, a screenshot, the receipt for the claim.
+- **Bridge on audio** — let the voice run continuous while the picture changes.
+
+A seam breaks when the edit *tries* to preserve visual continuity and fails:
+head, gaze, and hands teleport while everything else pretends nothing happened.
+That's what got rejected. `--xfade` exists but is **off by default**.
+
+`--tighten` cuts silence over `--max-gap` (default **0.70s** — a full second of
+dead air is long in short-form). But **one threshold is not editing.** Dead air,
+a thinking pause, an emotional pause, and a comedic beat are different things and
+only one of them should be cut. Raise `--max-gap` to protect a pause that's doing
+work; never cut the beat that sells a confession.
 
 ### Don't put words in the creator's mouth
 
@@ -148,9 +177,32 @@ python3 "$SKILL_DIR/scripts/clip.py" cut <workdir> \
 - `--vertical` — 9:16 center-crop + scale to 1080×1920 for Shorts/Reels/TikTok.
 - `--captions` — burn in captions: 4-word uppercase bursts, heavy outline, lower
   third. Built from **word** timings, so no text leaks in from outside the cut.
-- `--tighten` — remove filler words and dead air **inside** each clip, emitting a
-  multi-segment concat instead of one continuous trim. Needs `prep --whisper`.
-  This is the difference between a raw trim and an edited clip.
+- `--tighten` — cut filler words and dead air **inside** the clip. Needs
+  `prep --whisper`. Every cut it makes is a seam — read the seam rules above
+  before using it on a locked-off shot.
+- `--max-gap 0.70` — silence longer than this counts as dead air. Raise it to
+  protect a meaningful pause.
+- `--push` — slow continuous zoom.
+- `--xfade` — crossfade seams. **Off by default**, and usually wrong.
+- `--hook "text"` / `--emphasize "word"` — **only when the creator asks.**
+- Loudness is normalised to −14 LUFS automatically (`--no-loudnorm` to skip).
+  Bad audio kills a clip faster than mediocre video.
+
+Source frame rate is preserved (60fps stays 60fps). Captions are burned **last**,
+over the finished timeline — never into the parts, or `--push` would zoom them
+and seams would dissolve caption pixels.
+
+## Known gaps (do these next, in this order)
+
+1. **Face-aware crop.** `--vertical` is a naive center-crop; it decapitates an
+   off-centre speaker. Detect the face and crop around it.
+2. **Seam scoring.** Before cutting, sample frames around the cut point and score
+   face position / mouth / hands / motion. That tells you where a jump cut will
+   actually work instead of guessing.
+3. **Phrase-aware captions.** Chunking every 4 words is mechanical; build readable
+   phrase units and balance the lines.
+4. **Cutaways.** When the transcript names a number, brand, tweet or chart,
+   consider an insert. That's how a hard claim becomes believable.
 
 Cuts are padded slightly (0.20s head / 0.35s tail) so they don't shave breaths
 or clip final consonants. Clips are re-encoded rather than stream-copied,
@@ -159,13 +211,14 @@ words you chose.
 
 ## Where this sits
 
-`/clip` **cuts footage that already exists.** That's all it does, and it does it
-for free.
+`/clip` **cuts footage that exists.** It is the free, local, unmetered layer.
 
-It is not the tool for *polishing* a take (studio-grade audio cleanup — that's
-what Descript and similar are for), and it is not the tool for *creating* footage
-that never existed (motion graphics, animated intros — that's Remotion,
-Hyperframes, After Effects).
+- To *polish* a take — Studio Sound, filler-word removal, studio captions — use
+  **Descript** (MCP is connected; costs AI credits; note it has no local export,
+  only publish-to-link).
+- To *create footage that never existed* — intros, lower-thirds, motion graphics,
+  data animations — use **Remotion** (React → MP4, live project at
+  `~/Building/Clients/client-UGM/ugm-sizzle`) or **Hyperframes** (HTML/CSS → MP4).
 
 Don't reach for a paid or generative tool to do a job ffmpeg does for free.
 
