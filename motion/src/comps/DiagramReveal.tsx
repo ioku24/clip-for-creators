@@ -24,6 +24,20 @@ export type DiagramRevealProps = {
 
 type Point = { x: number; y: number };
 
+const NODE_WIDTH = 250;
+const NODE_HEIGHT = 120;
+
+const pointAtNodeBorder = (source: Point, target: Point): Point => {
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  if (dx === 0 && dy === 0) return target;
+  const scale = Math.min(
+    dx === 0 ? Number.POSITIVE_INFINITY : NODE_WIDTH / 2 / Math.abs(dx),
+    dy === 0 ? Number.POSITIVE_INFINITY : NODE_HEIGHT / 2 / Math.abs(dy),
+  );
+  return { x: target.x - dx * scale, y: target.y - dy * scale };
+};
+
 const positionsFor = (
   count: number,
   layout: DiagramRevealProps["layout"],
@@ -83,9 +97,10 @@ export const DiagramReveal: React.FC<DiagramRevealProps> = ({
             id="diagram-arrow"
             markerWidth="10"
             markerHeight="10"
-            refX="8"
+            refX="10"
             refY="5"
             orient="auto"
+            viewBox="0 0 10 10"
           >
             <path d="M0,0 L10,5 L0,10 z" fill={tokens.accent} />
           </marker>
@@ -104,14 +119,19 @@ export const DiagramReveal: React.FC<DiagramRevealProps> = ({
             }),
             1,
           );
-          const length = Math.hypot(b.x - a.x, b.y - a.y);
+          const startPoint = pointAtNodeBorder(b, a);
+          const endPoint = pointAtNodeBorder(a, b);
+          const length = Math.hypot(
+            endPoint.x - startPoint.x,
+            endPoint.y - startPoint.y,
+          );
           return (
             <line
               key={`${from}-${to}-${index}`}
-              x1={a.x}
-              y1={a.y}
-              x2={b.x}
-              y2={b.y}
+              x1={startPoint.x}
+              y1={startPoint.y}
+              x2={endPoint.x}
+              y2={endPoint.y}
               stroke={tokens.accent}
               strokeWidth={7}
               strokeLinecap="round"
@@ -141,8 +161,8 @@ export const DiagramReveal: React.FC<DiagramRevealProps> = ({
               position: "absolute",
               left: point.x,
               top: point.y,
-              width: 250,
-              minHeight: 92,
+              width: NODE_WIDTH,
+              height: NODE_HEIGHT,
               padding: "22px 26px",
               borderRadius: tokens.radius,
               border: `4px solid ${tokens.accent}`,

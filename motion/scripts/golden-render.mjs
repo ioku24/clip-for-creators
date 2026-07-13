@@ -16,6 +16,7 @@ const beats = [
     duration: 2.4,
     payoffAt: 1.35,
     words: "make your future self proud",
+    serves: "States the thesis as the hook.",
     props: { text: "make your future self proud", sub: "every video" },
     canvas: "vertical",
   },
@@ -27,6 +28,7 @@ const beats = [
     duration: 2.5,
     payoffAt: 1.5,
     words: "three likes",
+    serves: "Makes the spoken number legible.",
     props: { to: 3, label: "likes", suffix: "" },
     canvas: "vertical",
   },
@@ -38,6 +40,7 @@ const beats = [
     duration: 3,
     payoffAt: 1.8,
     words: "feed choices future",
+    serves: "Makes the framework legible.",
     props: {
       nodes: ["THE FEED", "YOUR CHOICES", "YOUR FUTURE"],
       arrows: [
@@ -56,6 +59,7 @@ const beats = [
     duration: 3,
     payoffAt: 1.7,
     words: "mile plyometrics sprints",
+    serves: "Tracks progress through the plan.",
     props: {
       title: "TODAY",
       items: ["ONE MILE", "PLYOMETRICS", "SPRINTS"],
@@ -71,6 +75,7 @@ const beats = [
     duration: 2.4,
     payoffAt: 1.2,
     words: "still no headphones",
+    serves: "Pays off the planted callback.",
     props: { title: "still no headphones", sub: "CALLBACK" },
     canvas: "vertical",
   },
@@ -82,6 +87,7 @@ const beats = [
     duration: 2.2,
     payoffAt: 1.05,
     words: "the turning point",
+    serves: "Marks a structural chapter break.",
     props: { kicker: "CHAPTER 02", title: "The turning point" },
     canvas: "horizontal",
   },
@@ -93,6 +99,7 @@ const beats = [
     duration: 3,
     payoffAt: 2,
     words: "morning routine optimize behind becoming",
+    serves: "Builds the visual argument through accumulation.",
     props: {
       items: [
         "5 AM MORNING ROUTINE",
@@ -112,6 +119,7 @@ const beats = [
     duration: 2.7,
     payoffAt: 1.15,
     words: "is this really me",
+    serves: "Destroys the built argument at the turn.",
     props: { text: "IS THIS REALLY ME", mode: "drop" },
     canvas: "vertical",
   },
@@ -184,12 +192,14 @@ for (const beat of beats) {
       );
     }
 
+    const previewAt =
+      beat.comp === "Collapse" ? beat.duration * 0.25 : beat.duration / 2;
     const frame = run("ffmpeg", [
       "-v",
       "error",
       "-y",
       "-ss",
-      (beat.duration / 2).toFixed(3),
+      previewAt.toFixed(3),
       "-i",
       mov,
       "-frames:v",
