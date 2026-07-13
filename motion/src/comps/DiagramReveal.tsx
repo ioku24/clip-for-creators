@@ -30,6 +30,16 @@ export type DiagramRevealProps = {
    * into "center" only on footage with a genuinely empty middle.
    */
   placement?: "lower" | "center" | "upper";
+  /**
+   * When each node lands, in seconds from the beat's start — one entry per node.
+   *
+   * WITHOUT THIS the primitive staggers nodes at a fixed cadence and they drift
+   * off the speech. On a real job she said the three steps at 4.2s / 10.0s /
+   * 14.2s into the beat; the fixed stagger fired the first two inside 1.5s and
+   * then left a 13-SECOND hole. Same class of bug as a count-up that lands early:
+   * a graphic syncs to the WORD, not to a cadence.
+   */
+  nodeAt?: number[];
   tokens?: Tokens;
 };
 
@@ -49,7 +59,7 @@ const pointAtNodeBorder = (source: Point, target: Point): Point => {
   return { x: target.x - dx * scale, y: target.y - dy * scale };
 };
 
-const BANDS = { upper: 0.20, center: 0.43, lower: 0.78 } as const;
+const BANDS = { upper: 0.2, center: 0.43, lower: 0.78 } as const;
 
 const positionsFor = (
   count: number,
@@ -91,6 +101,7 @@ export const DiagramReveal: React.FC<DiagramRevealProps> = ({
   layout,
   duration,
   placement = "lower",
+  nodeAt,
   payoffAt = duration * 0.62,
   tokens = DEFAULT_TOKENS,
 }) => {
@@ -98,6 +109,110 @@ export const DiagramReveal: React.FC<DiagramRevealProps> = ({
   const { fps, width, height } = useVideoConfig();
   const { alive } = useIO(0, Math.max(0, duration - EXIT_SECS));
   const points = positionsFor(nodes.length, layout, width, height, placement);
+
+  /**
+   * "row" is a FLOW, and a flow of real sentences is not a box diagram.
+   *
+   * The old row layout gave every node a hardcoded 250px box at fixed fractions
+   * of the frame width. On real text that means: four-line wraps inside a tiny
+   * box, and the last node pushed clean OFF the frame with its arrow pointing
+   * into nothing. It looked like clip-art dropped on the footage.
+   *
+   * A flow renders as ONE card — steps inline, thin connectors, no per-node
+   * boxes. It cannot overflow (flex + maxWidth), it cannot wrap badly, and it
+   * reads as designed rather than assembled. Loop and funnel keep the SVG
+   * treatment below; those genuinely are diagrams.
+   */
+  if (layout === "row") {
+    const band =
+      placement === "upper" ? 0.14 : placement === "center" ? 0.42 : 0.74;
+    // Each step is its own pill, LEFT-ALIGNED so new pills append rightward
+    // without reflowing the ones already on screen. A single shared card had to
+    // reserve space for nodes that had not arrived yet — a dark bar extending
+    // into nothing for as long as the speaker took to get there.
+    const timing = (index: number) =>
+      nodeAt?.[index] ??
+      (index === nodes.length - 1 ? payoffAt : 0.25 + index * 0.85);
+
+    return (
+      <AbsoluteFill
+        style={{ backgroundColor: "transparent", fontFamily: tokens.font }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            top: height * band,
+            left: width * 0.05,
+            right: width * 0.05,
+            display: "flex",
+            alignItems: "center",
+            opacity: alive,
+          }}
+        >
+          {nodes.map((label, index) => {
+            const isLast = index === nodes.length - 1;
+            const s0 = Math.min(
+              spring({
+                frame: frame - timing(index) * fps,
+                fps,
+                config: isLast ? SPRING_LAND : SPRING_CALM,
+              }),
+              1,
+            );
+            if (s0 <= 0.001) return null;
+            const prev =
+              index === 0
+                ? 1
+                : Math.min(
+                    spring({
+                      frame: frame - (timing(index) - 0.35) * fps,
+                      fps,
+                      config: SPRING_CALM,
+                    }),
+                    1,
+                  );
+            return (
+              <div
+                key={label}
+                style={{ display: "flex", alignItems: "center", flex: "0 0 auto" }}
+              >
+                {index > 0 && (
+                  <span
+                    aria-hidden
+                    style={{
+                      margin: `0 ${height * 0.022}px`,
+                      fontSize: height * 0.028,
+                      fontWeight: 300,
+                      color: "rgba(255,255,255,0.5)",
+                      opacity: prev,
+                    }}
+                  >
+                    →
+                  </span>
+                )}
+                <div
+                  style={{
+                    padding: `${height * 0.018}px ${height * 0.026}px`,
+                    borderRadius: tokens.radius,
+                    background: tokens.paper,
+                    boxShadow: "0 18px 46px rgba(0,0,0,.5)",
+                    fontSize: height * 0.03,
+                    fontWeight: isLast ? 800 : 600,
+                    color: isLast ? tokens.ink : "rgba(255,255,255,0.82)",
+                    whiteSpace: "nowrap",
+                    opacity: s0,
+                    transform: `translateY(${(1 - s0) * 14}px) scale(${0.94 + s0 * 0.06})`,
+                  }}
+                >
+                  {label}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </AbsoluteFill>
+    );
+  }
 
   return (
     <AbsoluteFill
@@ -126,7 +241,9 @@ export const DiagramReveal: React.FC<DiagramRevealProps> = ({
           const b = points[to];
           if (!a || !b) return null;
           const isPayoff = index === arrows.length - 1;
-          const start = isPayoff ? payoffAt : Math.min(payoffAt, 0.45 + index * 0.22);
+          const start = isPayoff
+            ? payoffAt
+            : Math.min(payoffAt, 0.45 + index * 0.22);
           const draw = Math.min(
             spring({
               frame: frame - start * fps,
