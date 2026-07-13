@@ -23,6 +23,10 @@ export const validate = (
   const transcript = normalize(transcriptText);
   const ids = new Set<string>();
 
+  if (typeof manifest.thesis !== "string" || manifest.thesis.trim() === "") {
+    errors.push(issue("no-thesis", "manifest thesis is required"));
+  }
+
   for (const beat of manifest.beats) {
     const words = normalize(beat.words);
     if (words.length === 0 || !transcript.includes(words)) {
@@ -114,6 +118,44 @@ export const validate = (
       issue(
         "density-horizontal",
         `${manifest.beats.length} beats in ${manifest.clipDuration}s averages denser than one per 15s`,
+      ),
+    );
+  }
+
+  if (
+    manifest.beats.length > 3 &&
+    !manifest.beats.some(
+      (beat) => beat.role === "THROUGHLINE" || beat.role === "CALLBACK",
+    )
+  ) {
+    warnings.push(
+      issue(
+        "thesis-unserved",
+        "more than three beats are present without a THROUGHLINE or CALLBACK",
+      ),
+    );
+  }
+
+  const checklistBeats = [...manifest.beats]
+    .filter((beat) => beat.comp === "Checklist")
+    .sort((a, b) => a.start - b.start);
+  if (
+    checklistBeats.length > 0 &&
+    !checklistBeats.some((beat) => {
+      const items = beat.props.items;
+      const done = beat.props.done;
+      return (
+        Array.isArray(items) &&
+        items.length > 0 &&
+        typeof done === "number" &&
+        done === items.length
+      );
+    })
+  ) {
+    warnings.push(
+      issue(
+        "plan-unpaid",
+        "a Checklist plan is present but never reaches full completion",
       ),
     );
   }

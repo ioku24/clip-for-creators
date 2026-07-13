@@ -30,12 +30,14 @@ export type BeatSpec = {
   duration: number;
   payoffAt?: number;
   words: string;
+  serves: string;
   props: Record<string, unknown>;
   sfx?: SfxCue[];
 };
 
 export type Manifest = {
   version: 1;
+  thesis: string;
   canvas: "vertical" | "horizontal";
   tokens?: Partial<import("./tokens").Tokens>;
   clipDuration: number;

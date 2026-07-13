@@ -41,6 +41,7 @@ export const beatSchema = z.object({
   duration: z.number().positive(),
   payoffAt: z.number().optional(),
   words: z.string(),
+  serves: z.string(),
   props: z.record(z.string(), z.unknown()),
   sfx: z
     .array(

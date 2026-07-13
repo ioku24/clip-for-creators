@@ -9,6 +9,7 @@ const sampleBeat = {
   duration: 3,
   payoffAt: 1.8,
   words: "make your future self proud",
+  serves: "States the thesis as the hook.",
   props: { text: "make your future self proud" },
   canvas: "vertical",
 } satisfies BeatProps;

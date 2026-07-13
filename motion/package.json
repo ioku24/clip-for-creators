@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "studio": "remotion studio",
-    "check": "tsc --noEmit && node --test tests/",
+    "check": "tsc --noEmit && node --test tests/*.test.mjs",
     "golden": "node scripts/golden-render.mjs"
   },
   "dependencies": {

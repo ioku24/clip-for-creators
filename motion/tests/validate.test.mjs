@@ -38,12 +38,14 @@ const beat = (overrides = {}) => ({
   duration: 3,
   payoffAt: 2.5,
   words: "make your future self proud",
+  serves: "Hooks the thesis in the creator's own words.",
   props: { text: "make your future self proud" },
   ...overrides,
 });
 
 const manifest = (overrides = {}) => ({
   version: 1,
+  thesis: "Showing up today is how you make your future self proud.",
   canvas: "vertical",
   clipDuration: 30,
   beats: [beat()],
@@ -69,6 +71,80 @@ test("rejects payoffAt outside the beat window", () => {
   );
 
   assert.equal(hasCode(result.errors, "sync-bounds"), true);
+});
+
+test("rejects a beat that extends beyond the clip bounds", () => {
+  const result = validate(
+    manifest({ beats: [beat({ start: 28, duration: 3, payoffAt: 29 })] }),
+    "Make your future self proud.",
+  );
+
+  assert.equal(hasCode(result.errors, "sync-bounds"), true);
+});
+
+test("rejects an invalid beat id", () => {
+  const result = validate(
+    manifest({ beats: [beat({ id: "Bad ID" })] }),
+    "Make your future self proud.",
+  );
+
+  assert.equal(hasCode(result.errors, "bad-id"), true);
+});
+
+test("rejects a missing or blank thesis", () => {
+  const result = validate(
+    manifest({ thesis: "   " }),
+    "Make your future self proud.",
+  );
+
+  assert.equal(hasCode(result.errors, "no-thesis"), true);
+});
+
+test("warns when more than three beats do not serve a thesis arc", () => {
+  const result = validate(
+    manifest({
+      beats: [
+        beat({ id: "hook", role: "HOOK", start: 1.2 }),
+        beat({ id: "build-one", role: "BUILD", start: 5 }),
+        beat({ id: "build-two", role: "BUILD", start: 9 }),
+        beat({ id: "end", role: "END", start: 13 }),
+      ],
+    }),
+    "Make your future self proud.",
+  );
+
+  assert.equal(hasCode(result.warnings, "thesis-unserved"), true);
+});
+
+test("warns when a checklist plan is never paid off", () => {
+  const checklistProps = {
+    title: "The plan",
+    items: ["make", "your", "future"],
+    done: 1,
+  };
+  const result = validate(
+    manifest({
+      beats: [
+        beat({
+          id: "plan-start",
+          comp: "Checklist",
+          role: "THROUGHLINE",
+          start: 2,
+          props: checklistProps,
+        }),
+        beat({
+          id: "plan-progress",
+          comp: "Checklist",
+          role: "THROUGHLINE",
+          start: 8,
+          props: { ...checklistProps, done: 2 },
+        }),
+      ],
+    }),
+    "Make your future self proud.",
+  );
+
+  assert.equal(hasCode(result.warnings, "plan-unpaid"), true);
 });
 
 test("warns when an early beat is not the hook", () => {
