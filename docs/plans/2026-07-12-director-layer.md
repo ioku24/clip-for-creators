@@ -321,6 +321,24 @@ color or a fourth simultaneous element, it's two beats or zero.
 
 ---
 
+## Checkpoint addenda — Fable review after Tasks 1–3 (2026-07-12, do these in Tasks 4–6)
+
+**A. Branch hygiene FIRST.** Commits `80eac9a` + `8716ff0` belong to this feature, not main. While on `director-layer` (it points at `8716ff0`): `git checkout director-layer`, then `git branch -f main 31b44df`. Then commit the currently-uncommitted Task 1–3 work as the plan's per-task commits on `director-layer`. Nothing is pushed; origin/main is untouched.
+
+**B. Adopt the REVIEW's thesis upgrade** (from `docs/plans/2026-07-12-director-layer-REVIEW.md`) into schema + validator + tests:
+- `Manifest.thesis: string` — required. The creator's argument in ONE sentence, in their own logic.
+- `BeatSpec.serves: string` — required. One sentence: how this beat serves the thesis, or the structural job it does ("hook", "chapter mark", "plan payoff").
+- ERROR `no-thesis`: thesis missing/empty/whitespace.
+- WARNING `thesis-unserved`: manifest has >3 beats and none carries role `THROUGHLINE` or `CALLBACK` — moments got graphics, the argument got none.
+- WARNING `plan-unpaid`: a `Checklist` beat exists but no later `Checklist` beat reaches `done === items.length` — a plan announced and never paid off.
+- Update existing tests' fixtures; add one test per new rule. Also add the missing tests for `sync-bounds` and `bad-id`.
+
+**C. `/direct` SKILL.md:** include the REVIEW's "STEP 0 — read for the ARGUMENT" section verbatim ABOVE "What a director looks for", and add `thesis`/`serves` to the workflow (draft the thesis first; every proposed beat states what it serves in the approval message).
+
+**D. Polish (small, real):**
+- `DiagramReveal`: inset arrowheads so they stop at the node border instead of overlapping the node text.
+- `golden-render.mjs`: capture the preview PNG at 25% of the beat for `Collapse` (mid-frame lands after the destruction and proves nothing).
+
 ## Verification summary (what "done" means)
 
 1. `cd motion && npm run check` — typecheck + all `node --test` suites pass.
