@@ -277,7 +277,8 @@ was tested head-to-head on the same graphic, and it isn't close:
 | Already installed | yes, and in production | 20 skills, 9 of which leaked into the GLOBAL skill dir on first run |
 
 HyperFrames is genuinely faster for a single linear GSAP timeline. That is not
-worth a second toolchain. **Everything we build lives in Remotion.**
+worth a second overlay toolchain. **Reusable alpha overlays in this repo live in
+Remotion; Hyperframes remains an alternative packaging lane.**
 
 Working invocation — memorise it, the profile alone is NOT enough:
 
@@ -298,8 +299,9 @@ into the middle of a clip. A lone 8-second graphic in a 25-second video arrives
 from nowhere and leaves; it reads as an interruption, and that is what "it looks
 weird" actually means.
 
-So render **one graphics track the full length of the clip**, with multiple beats
-inside it. Not several short overlays — one layer, like a real edit.
+So author **one graphics argument across the full clip**, developed through
+multiple beats. `/direct` renders short overlays per approved beat, but together
+they must read as one visual language, not disconnected effects.
 
 **Put a beat in the first 3–5 seconds.** That is where retention is decided. A
 clip whose graphics start at 0:11 has already lost the people who left.
@@ -363,9 +365,10 @@ The rules are tighter than for B-roll:
 - **Keep it short** (1–2s). It's punctuation, not a slide.
 
 Everything here runs on ffmpeg, so it works on any machine the skill installs on.
-Richer motion graphics (Remotion, Hyperframes) are a different, heavier tool —
-worth it for a produced piece, wrong for a confessional, and not portable to a
-creator who hasn't installed a Node toolchain.
+Richer motion graphics are the `/direct` skill (this repo, `motion/` library),
+which renders ProRes 4444 overlays consumed by `--overlay`; Hyperframes remains
+an alternative packaging lane. They are still wrong for a confessional unless
+the graphics carry information the face cannot.
 
 ## Known gaps (do these next, in this order)
 
@@ -387,9 +390,9 @@ words you chose.
 - To *polish* a take — Studio Sound, filler-word removal, studio captions — use
   **Descript** (MCP is connected; costs AI credits; note it has no local export,
   only publish-to-link).
-- To *create footage that never existed* — intros, lower-thirds, motion graphics,
-  data animations — use **Remotion** (React → MP4, live project at
-  `~/Building/Clients/client-UGM/ugm-sizzle`) or **Hyperframes** (HTML/CSS → MP4).
+- For richer motion graphics, use **`/direct`** and this repo's `motion/` library;
+  it renders ProRes 4444 overlays consumed by `--overlay`. Hyperframes remains
+  an alternative packaging lane.
 
 Don't reach for a paid or generative tool to do a job ffmpeg does for free.
 

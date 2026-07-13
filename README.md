@@ -57,6 +57,10 @@ It will:
 You can always overrule it. It's a second pair of eyes on your own words, not a
 replacement for your taste.
 
+Ask it to add motion graphics and `/direct` will read the clip's argument, then
+propose a beat sheet with the words, timing, and reason for every graphic.
+Nothing renders until you approve it.
+
 ## The things worth knowing
 
 **Restructure before you decorate.** The single best thing you can do to a clip

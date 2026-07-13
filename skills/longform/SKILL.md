@@ -76,6 +76,10 @@ drift later and later through the video.
 Chapter titles follow the same rule as clip titles: **they are the creator's
 voice.** Draft them, propose them, never impose them.
 
+Chapter cards and the throughline tracker can be rendered via `/direct`
+(`ChapterCard` / `Checklist` primitives). Time them from the finished clip's
+EDL, and keep long-form graphics sparse by doctrine.
+
 ## Workflow
 
 1. `clip.py prep <url>` — run it in the background; a 15-min whisper pass takes
