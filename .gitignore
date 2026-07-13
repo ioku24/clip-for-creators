@@ -2,3 +2,5 @@ clip-work/
 *.mp4
 __pycache__/
 .DS_Store
+motion/node_modules/
+motion/out/
