@@ -732,12 +732,24 @@ def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
         ],
     }, indent=2))
 
-    # Always drop a preview frame. This is how the framing gets checked: the
-    # agent LOOKS at it. A center-crop silently decapitating an off-centre
-    # speaker is the worst failure this tool has, and one glance catches it.
+    # Always drop a preview. This is how framing gets checked: the agent LOOKS.
+    # A centre-crop silently decapitating an off-centre speaker is the worst
+    # failure this tool has.
+    #
+    # THREE frames, not one. A single early frame is a useless sample of a
+    # MOVING subject — it misread a wide shot of someone doing plyometrics as
+    # correctly framed when she was jumping in and out of the crop window.
+    # Start / middle / end, stacked into one contact sheet.
     preview = work / f"{out_name}-frame.jpg"
-    run(["ffmpeg", "-v", "error", "-y", "-ss", f"{min(1.0, duration_of(out) / 3):.2f}",
-         "-i", str(out.resolve()), "-frames:v", "1", preview.name], cwd=work)
+    d = duration_of(out)
+    stamps = [d * 0.12, d * 0.5, d * 0.88]
+    cmd = ["ffmpeg", "-v", "error", "-y"]
+    for s in stamps:
+        cmd += ["-ss", f"{s:.2f}", "-i", str(out.resolve())]
+    cmd += ["-filter_complex",
+            "[0:v]scale=360:-1[a];[1:v]scale=360:-1[b];[2:v]scale=360:-1[c];[a][b][c]hstack=3",
+            "-frames:v", "1", preview.name]
+    run(cmd, cwd=work)
 
     print(f"\n{out}  ({duration_of(out):.1f}s, {fps}fps)")
     print(f"preview frame: {preview}   <- LOOK AT THIS. If the speaker is cropped "
