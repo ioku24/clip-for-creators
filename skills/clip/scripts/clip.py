@@ -31,6 +31,49 @@ from pathlib import Path
 PAD_HEAD = 0.20
 PAD_TAIL = 0.35
 
+# How far a pad may encroach on a neighbouring word. 30ms is the tail of a
+# consonant release — it protects a plosive's attack when two words butt up
+# against each other with no silence between them, and is far too short to be
+# heard as a word fragment.
+ENCROACH = 0.03
+
+
+def word_bounds(segs):
+    return sorted((w["start"], w["end"]) for s in segs for w in s.get("words", []))
+
+
+def pad_into_silence(raw_a, raw_b, wb, duration):
+    """Pad a span for breathing room — but ONLY into silence.
+
+    THE BUG THIS EXISTS TO KILL: padding used to expand by a flat PAD_HEAD /
+    PAD_TAIL and walk straight into the neighbouring word. On a real vlog that
+    put one boundary 50% through "know" and the next 72% through "editing", so
+    the seam played:
+
+        "...hundred meter sprints I kn-"  |  "-ing. You know, and maybe..."
+
+    Two half-words back to back. That is what a viewer hears as CHOPPY, and no
+    framing punch, crossfade or de-click repairs a severed syllable — the fix
+    has to happen where the cut is chosen, not where it is rendered.
+
+    A cut belongs in the gap between words. If there is no gap, we take 30ms and
+    no more. If the caller's own timestamp lands mid-word we snap it out of that
+    word first (keeping the word whole if we're past its midpoint, dropping it
+    if we're not) — a fragment is never what anyone meant.
+    """
+    for s, e in wb:
+        if s < raw_a < e:
+            raw_a = s if raw_a < (s + e) / 2 else e
+        if s < raw_b < e:
+            raw_b = s if raw_b < (s + e) / 2 else e
+
+    prev_end = max([e for _, e in wb if e <= raw_a] or [0.0])
+    next_start = min([s for s, _ in wb if s >= raw_b] or [duration])
+
+    a = max(0.0, prev_end - ENCROACH, raw_a - PAD_HEAD)
+    b = min(duration, next_start + ENCROACH, raw_b + PAD_TAIL)
+    return a, b
+
 VIDEO_EXT = {".mp4", ".mkv", ".webm", ".mov", ".m4v"}
 
 # Only unambiguous disfluencies. "like", "so", "you know" are NOT here on
@@ -255,11 +298,17 @@ def tighten(segs, a, b, max_gap):
 
     # Pad for breathing room, but never more than a third of the way into the
     # hole we just cut — otherwise the padding re-imports the filler we removed.
+    # ...and never into a WORD. A third of the way into the hole can still land
+    # on the filler we just excised, or on the neighbour's last syllable.
+    wb = sorted((w["start"], w["end"]) for w in words)
     padded = []
     for i, (s, e) in enumerate(spans):
         head = MICRO_PAD if i == 0 else min(MICRO_PAD, (s - spans[i - 1][1]) / 3)
         tail = MICRO_PAD if i == len(spans) - 1 else min(MICRO_PAD, (spans[i + 1][0] - e) / 3)
-        padded.append((max(a, s - head), min(b, e + tail)))
+        prev_end = max([we for _, we in wb if we <= s] or [a])
+        next_start = min([ws for ws, _ in wb if ws >= e] or [b])
+        padded.append((max(a, s - head, prev_end - ENCROACH),
+                       min(b, e + tail, next_start + ENCROACH)))
 
     merged = [padded[0]]
     for s, e in padded[1:]:
@@ -367,6 +416,57 @@ def write_ass(cues, path: Path, vertical, emphasize=(), hook=""):
 # ----------------------------------------------------------------- render
 
 
+JUMP_SSIM = 0.70     # above this, two seam frames are the SAME SHOT
+PUNCH = 1.055        # framing change that declares a jump cut. Subtle on purpose.
+
+
+def seam_ssim(video: Path, t_out: float, t_in: float, work: Path) -> float:
+    """How similar are the frames either side of a seam?
+
+    HIGH similarity means we cut from a shot back into the SAME shot seconds
+    later — the speaker's head, hands and gaze teleport while the background
+    insists nothing happened. That is the cut that reads as broken.
+    LOW similarity means the scene changed, and the viewer accepts the cut.
+    """
+    a, b = work / "_sa.png", work / "_sb.png"
+    for t, p in ((max(0.0, t_out - 0.08), a), (t_in + 0.08, b)):
+        run(["ffmpeg", "-v", "error", "-y", "-ss", f"{t:.3f}", "-i", str(video),
+             "-frames:v", "1", "-vf", "scale=160:90", str(p)])
+    r = subprocess.run(["ffmpeg", "-v", "error", "-i", str(a), "-i", str(b),
+                        "-lavfi", "ssim=stats_file=-", "-f", "null", "-"],
+                       capture_output=True, text=True)
+    for line in (r.stdout + r.stderr).splitlines():
+        if "All:" in line:
+            try:
+                return float(line.split("All:")[1].split()[0])
+            except Exception:
+                pass
+    return 0.0
+
+
+def declare_seams(video: Path, render, work: Path):
+    """Give each span a scale so that every JUMP CUT changes the framing.
+
+    A jump cut is not fixed by making it softer — a dissolve between two
+    positions of the same face advertises the discontinuity. It's fixed by
+    DECLARING it: the framing changes across the seam, so the eye reads "that
+    was an edit" instead of "that was a glitch". Every vlog you've ever enjoyed
+    does this.
+
+    Scene changes are left alone. They don't need help.
+    """
+    scales = [1.0]
+    print("  seams:", flush=True)
+    for i in range(1, len(render)):
+        s = seam_ssim(video, render[i - 1][1], render[i][0], work)
+        jump = s >= JUMP_SSIM
+        # alternate the framing ONLY across jump cuts; a scene change resets it
+        scales.append(PUNCH if (jump and scales[-1] == 1.0) else 1.0)
+        print(f"    {'JUMP  ' if jump else 'scene '} ssim={s:.2f}"
+              f"{'  -> punch ' + str(round(scales[-1], 3)) if jump else ''}", flush=True)
+    return scales
+
+
 def crop_9x16(video: Path, crop_x=0.5) -> str:
     """9:16 crop. `crop_x` is where the keep-window sits horizontally: 0.0 = hard
     left, 0.5 = centre, 1.0 = hard right.
@@ -402,12 +502,26 @@ def join(parts, out: Path, work: Path, fps, use_xfade):
 
     durs = [duration_of(p) for p in parts]
     if not use_xfade or min(durs) <= XFADE * 2:
-        lf = work / "list.txt"
-        # Written from the in-memory render order — never re-globbed from disk,
-        # where part100 sorts between part10 and part11.
-        lf.write_text("\n".join(f"file '{p.name}'" for p in parts))
-        run(["ffmpeg", "-v", "error", "-y", "-f", "concat", "-safe", "0",
-             "-i", str(lf), "-c", "copy", str(out)])
+        # The concat FILTER, not the concat demuxer with -c copy.
+        #
+        # Each part is encoded to AAC independently, and AAC carries ~1024
+        # samples of encoder priming. Stitching those with `-c copy` splices the
+        # priming in too: a ~50ms DROPOUT at every seam. Measured -90dB holes at
+        # all 20 cuts of a finished vlog — audible as the audio briefly falling
+        # out. The demuxer is faster and it is quietly wrong.
+        #
+        # Decoding and re-encoding the audio as ONE continuous stream removes
+        # every gap. Costs one video re-encode. Worth it.
+        cmd = ["ffmpeg", "-v", "error", "-y"]
+        for p in parts:
+            cmd += ["-i", str(p)]
+        streams = "".join(f"[{i}:v][{i}:a]" for i in range(len(parts)))
+        cmd += ["-filter_complex", f"{streams}concat=n={len(parts)}:v=1:a=1[v][a]",
+                "-map", "[v]", "-map", "[a]",
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                "-pix_fmt", "yuv420p", "-r", str(fps),
+                "-c:a", "aac", "-b:a", "192k", "-ar", "48000", str(out)]
+        run(cmd)
         return
 
     offsets, acc = [], 0.0
@@ -540,7 +654,8 @@ def apply_sfx(out: Path, sfx, work: Path):
 
     filters.append(
         f"[0:a]{''.join(labels)}amix=inputs={len(sfx) + 1}:duration=first"
-        f":normalize=0,alimiter=limit=0.97[aout]")
+        f":normalize=0[aout]")   # mix only. Loudness is normalised LAST, on the
+                                 # FINAL mix — see finalize_audio().
 
     final = work / f"{out.stem}-sfx.mp4"
     cmd += ["-filter_complex", ";".join(filters),
@@ -549,6 +664,47 @@ def apply_sfx(out: Path, sfx, work: Path):
     run(cmd, cwd=work)
     shutil.move(final, out)
     print(f"  mixed {len(sfx)} sfx under the voice", flush=True)
+
+
+def finalize_audio(out: Path, work: Path):
+    """Normalise loudness LAST, on the FINAL mix.
+
+    Running loudnorm before mixing the SFX is the classic ordering bug: you
+    normalise to -14 LUFS, then ADD sound effects on top, and the finished file
+    lands at -13.3 LUFS with true peak at -0.2 dBTP. Over -1.0 dBTP causes
+    audible distortion on lossy playback (YouTube re-encodes everything).
+
+    The last thing that touches the audio must be the thing that measures it.
+    """
+    TARGET_I, TARGET_TP, TARGET_LRA = -14.0, -2.5, 11.0
+
+    # TWO PASSES. Single-pass loudnorm runs in DYNAMIC mode: it guesses as it
+    # goes, overshoots, and lands wherever it lands. Measured -12.9 LUFS and
+    # -0.0 dBTP on a file asked for -14/-1.5 — i.e. clipping. Pass 1 MEASURES the
+    # file; pass 2 applies those measurements in LINEAR mode, which is exact.
+    p = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-nostats", "-i", str(out.resolve()),
+         "-af", f"loudnorm=I={TARGET_I}:TP={TARGET_TP}:LRA={TARGET_LRA}:print_format=json",
+         "-f", "null", "-"], capture_output=True, text=True)
+    blob = p.stdout + p.stderr
+    m = re.search(r"\{[^{}]*\"input_i\"[^{}]*\}", blob, re.S)
+    if not m:
+        print("  loudnorm: measurement pass produced no JSON — skipping", flush=True)
+        return
+    d = json.loads(m.group(0))
+
+    af = (f"loudnorm=I={TARGET_I}:TP={TARGET_TP}:LRA={TARGET_LRA}"
+          f":measured_I={d['input_i']}:measured_TP={d['input_tp']}"
+          f":measured_LRA={d['input_lra']}:measured_thresh={d['input_thresh']}"
+          f":offset={d['target_offset']}:linear=true:print_format=summary")
+
+    final = work / f"{out.stem}-ln.mp4"
+    run(["ffmpeg", "-v", "error", "-y", "-i", str(out.resolve()),
+         "-af", af,
+         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", final.name],
+        cwd=work)
+    shutil.move(final, out)
+    print(f"  loudness: {d['input_i']} -> {TARGET_I} LUFS (2-pass, linear)", flush=True)
 
 
 def make_card(clip: Path, t, dur, text, work: Path, fps, vertical) -> Path:
@@ -602,7 +758,8 @@ def make_card(clip: Path, t, dur, text, work: Path, fps, vertical) -> Path:
 
 def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
         emphasize=(), hook="", push=False, use_xfade=False, max_gap=MAX_GAP,
-        loudnorm=True, crop_x=0.5, brolls=(), cards=(), overlays=(), sfx=()):
+        loudnorm=True, crop_x=0.5, brolls=(), cards=(), overlays=(), sfx=(),
+        declare=True):
     need("ffmpeg")
     meta = json.loads((work / "transcript.json").read_text())
     segs = meta["segments"]
@@ -623,10 +780,13 @@ def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
             sys.exit(f"clip {i}: {raw_a}–{raw_b}s is outside the source "
                      f"(0–{duration:.1f}s)")
 
+    wb = word_bounds(segs)
     render = []
     for raw_a, raw_b in spans:
-        a = max(0.0, raw_a - PAD_HEAD)
-        b = min(duration, raw_b + PAD_TAIL)
+        a, b = pad_into_silence(raw_a, raw_b, wb, duration)
+        if (a, b) != (max(0.0, raw_a - PAD_HEAD), min(duration, raw_b + PAD_TAIL)):
+            print(f"  snap {raw_a:.2f}-{raw_b:.2f} -> {a:.2f}-{b:.2f} "
+                  f"(a cut may not land inside a word)", flush=True)
         if do_tighten:
             subs, n_fill, secs = tighten(segs, a, b, max_gap)
             print(f"  tighten {a:.1f}-{b:.1f}s: -{n_fill} filler, "
@@ -640,16 +800,45 @@ def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
         shutil.rmtree(parts_dir)
     parts_dir.mkdir()
 
+    # A jump cut is DECLARED with a framing change, not softened with a
+    # dissolve. Detect which seams are same-shot and punch the framing across
+    # them so the eye reads "edit", not "glitch".
+    scales = declare_seams(video, render, work) if (declare and len(render) > 1) else [1.0] * len(render)
+
     crop = crop_9x16(video, crop_x) if vertical else None
     parts = []
     for i, (a, b) in enumerate(render):
         part = parts_dir / f"part{i:04d}.mp4"
         cmd = ["ffmpeg", "-v", "error", "-y", "-ss", f"{a:.3f}", "-to", f"{b:.3f}",
                "-i", str(video.resolve())]
+        vfx = []
         if crop:
-            cmd += ["-vf", crop]
+            vfx.append(crop)
+        if scales[i] != 1.0:
+            ow, oh = (1080, 1920) if vertical else (
+                tuple(int(x) for x in probe(video, "stream=width,height", "v:0").split(",")[:2]))
+            ow -= ow % 2
+            oh -= oh % 2
+            z = scales[i]
+            vfx.append(f"scale={int(ow * z) // 2 * 2}:{int(oh * z) // 2 * 2},crop={ow}:{oh}")
+        # setsar=1 on EVERY part, always. The punch-in scale leaves a fractional
+        # SAR (2276:2277) on punched parts while unpunched parts stay 1:1, and
+        # the concat filter refuses to join streams whose parameters differ:
+        # "Input link parameters do not match". Normalise it or the join dies.
+        vfx.append("setsar=1")
+        cmd += ["-vf", ",".join(vfx)]
         # Re-encode, not stream-copy: a copy snaps each cut to the nearest
         # keyframe and drifts it off the words we chose.
+        # A CLICK at a cut is an amplitude discontinuity — the waveform jumps.
+        # Measured 22dB and 20dB jumps on a finished vlog: audible pops.
+        #
+        # An acrossfade would fix it but OVERLAPS, shortening the audio by d at
+        # every seam while the video concat does not — that desyncs. A 20ms fade
+        # at each PART EDGE removes the discontinuity with zero length change.
+        # Inaudible as a fade; the pop is gone.
+        seg = max(0.06, b - a)
+        cmd += ["-af", f"afade=t=in:st=0:d=0.02,"
+                       f"afade=t=out:st={seg - 0.02:.3f}:d=0.02"]
         cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
                 "-pix_fmt", "yuv420p", "-r", str(fps),
                 "-c:a", "aac", "-b:a", "192k", "-ar", "48000", part.name]
@@ -696,9 +885,9 @@ def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
                   vertical, emphasize, hook)
         # AFTER zoompan, so the captions are never zoomed with the picture.
         vf.append(f"subtitles={ass.name}")
-    if loudnorm:
-        # Bad audio kills a clip faster than mediocre video. Broadcast-ish target.
-        af.append("loudnorm=I=-14:TP=-1.5:LRA=11")
+    # NOTE: loudness is NOT normalised here. It happens LAST, after the SFX are
+    # mixed — see finalize_audio(). Normalising a mix you are about to add to is
+    # how a file ends up at -13.3 LUFS / -0.2 dBTP.
 
     if vf or af:
         final = work / f"{out_name}-final.mp4"
@@ -717,6 +906,9 @@ def cut(work: Path, spans, out_name, vertical, captions, do_tighten=False,
 
     if sfx:
         apply_sfx(out, sfx, work)
+
+    if loudnorm:
+        finalize_audio(out, work)
 
     # Edit map: where each SOURCE span ended up in the FINISHED video. Chapter
     # markers and YouTube timestamps must be in output time — --tighten removes
@@ -787,6 +979,10 @@ def main():
     c.add_argument("--hook", default="",
                    help="hook text over the first 2.5s. ONLY when the creator asks for it.")
     c.add_argument("--push", action="store_true", help="slow continuous zoom (subtle)")
+    c.add_argument("--no-declare", action="store_true",
+                   help="leave raw hard cuts. By default every JUMP CUT (a seam "
+                        "back into the same shot) gets a small framing change, so "
+                        "the eye reads 'edit' instead of 'glitch'.")
     c.add_argument("--xfade", action="store_true",
                    help="crossfade seams instead of hard-cutting them")
     c.add_argument("--no-loudnorm", action="store_true", help="skip loudness normalisation")
@@ -867,7 +1063,7 @@ def main():
         cut(Path(a.work).expanduser().resolve(), spans, a.out,
             a.vertical, a.captions, a.tighten, emph, a.hook, a.push,
             a.xfade, a.max_gap, not a.no_loudnorm, a.crop_x, brolls, cards,
-            overlays, sfx)
+            overlays, sfx, not a.no_declare)
 
 
 if __name__ == "__main__":

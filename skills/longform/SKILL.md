@@ -6,9 +6,24 @@ user_invocable: true
 
 # /longform — make a raw long video watchable
 
-Reuses the `clip` skill's engine (`clip.py` in the sibling `clip/` skill folder). Read that
+Reuses `/clip`'s engine (`~/.claude/skills/clip/scripts/clip.py`). Read that
 skill first — the transcript is still the edit surface, and the approval rule
 still applies: **nothing renders until the human says yes.**
+
+## STEP 0 — state the thesis before you touch anything
+
+Read `/clip`'s STEP 0 and do it here first. On a vlog it matters more, not less:
+a 15-minute video has an *argument*, and if you edit for moments you will cut a
+video that is well-paced and says nothing.
+
+Concretely: `grep` the transcript for a repeated phrase. Creators state their
+thesis three or four times without realising. That phrase is the spine — it
+decides the cold open, the chapters, and every graphic.
+
+## Which renderer
+
+**Remotion.** Not Hyperframes. See `/clip`'s "Which renderer" section — the
+decision is made, don't re-litigate it per project.
 
 ## The diagnosis, before the tools
 
@@ -34,7 +49,7 @@ The good part is almost always buried at minute nine. The viewer leaves at
 minute one.
 
 ```bash
-python3 $CLIP_SKILL_DIR/scripts/clip.py cut <workdir> \
+python3 ~/.claude/skills/clip/scripts/clip.py cut <workdir> \
   --clips "<cold-open>,<body-start>:<body-end>" --tighten
 ```
 
@@ -75,10 +90,6 @@ drift later and later through the video.
 
 Chapter titles follow the same rule as clip titles: **they are the creator's
 voice.** Draft them, propose them, never impose them.
-
-Chapter cards and the throughline tracker can be rendered via `/direct`
-(`ChapterCard` / `Checklist` primitives). Time them from the finished clip's
-EDL, and keep long-form graphics sparse by doctrine.
 
 ## Workflow
 
