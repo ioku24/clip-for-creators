@@ -10,7 +10,10 @@ export type Tokens = {
 
 export const DEFAULT_TOKENS: Tokens = {
   font: "Inter, -apple-system, Helvetica, sans-serif",
-  accent: "#FFD24A",
+  // Monochrome by default — the amber text accent was rejected (Josh,
+  // 2026-07-13). Payoffs land by scale, not color. A per-client brand accent
+  // comes in via the manifest's tokens.accent override, never this default.
+  accent: "#FFFFFF",
   ink: "#FFFFFF",
   paper: "rgba(18,18,20,0.92)",
   radius: 22,
