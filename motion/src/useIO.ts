@@ -1,11 +1,16 @@
-import type React from "react";
+import React from "react";
 import {
   interpolate,
   spring,
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-import { DEFAULT_TOKENS, SPRING_CALM, type Tokens } from "./tokens";
+import {
+  DEFAULT_TOKENS,
+  SPRING_CALM,
+  SPRING_LAND,
+  type Tokens,
+} from "./tokens";
 
 const clamp = {
   extrapolateLeft: "clamp",
@@ -28,15 +33,30 @@ export const useIO = (inAt: number, outAt: number) => {
   return { t, frame, fps, alive: i * o, i };
 };
 
+export const useLand = (payoffAt: number) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  return Math.min(
+    spring({
+      frame: frame - payoffAt * fps,
+      fps,
+      config: SPRING_LAND,
+    }),
+    1,
+  );
+};
+
 export const Card: React.FC<{
   children: React.ReactNode;
   alive: number;
   i: number;
   tokens?: Tokens;
   style?: React.CSSProperties;
-}> = ({ children, alive, i, tokens = DEFAULT_TOKENS, style }) => (
-  <div
-    style={{
+}> = ({ children, alive, i, tokens = DEFAULT_TOKENS, style }) =>
+  React.createElement(
+    "div",
+    {
+      style: {
       position: "absolute",
       left: 90,
       bottom: 110,
@@ -48,8 +68,7 @@ export const Card: React.FC<{
       opacity: alive,
       transform: `translateY(${(1 - i) * 40}px)`,
       ...style,
-    }}
-  >
-    {children}
-  </div>
-);
+      },
+    },
+    children,
+  );

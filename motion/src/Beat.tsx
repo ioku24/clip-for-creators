@@ -1,8 +1,20 @@
 import { z } from "zod";
 import type { CalculateMetadataFunction } from "remotion";
-import { AbsoluteFill } from "remotion";
-import { DEFAULT_TOKENS, EXIT_SECS } from "./tokens";
-import { Card, useIO } from "./useIO";
+import { ChapterCard, type ChapterCardProps } from "./comps/ChapterCard";
+import { Checklist, type ChecklistProps } from "./comps/Checklist";
+import { Collapse, type CollapseProps } from "./comps/Collapse";
+import { CountUp, type CountUpProps } from "./comps/CountUp";
+import {
+  DiagramReveal,
+  type DiagramRevealProps,
+} from "./comps/DiagramReveal";
+import { FeedStack, type FeedStackProps } from "./comps/FeedStack";
+import {
+  KineticQuote,
+  type KineticQuoteProps,
+} from "./comps/KineticQuote";
+import { LowerThird, type LowerThirdProps } from "./comps/LowerThird";
+import { DEFAULT_TOKENS } from "./tokens";
 
 const tokenSchema = z.object({
   font: z.string().optional(),
@@ -30,6 +42,15 @@ export const beatSchema = z.object({
   payoffAt: z.number().optional(),
   words: z.string(),
   props: z.record(z.string(), z.unknown()),
+  sfx: z
+    .array(
+      z.object({
+        at: z.number(),
+        gain: z.number(),
+        sound: z.string(),
+      }),
+    )
+    .optional(),
   canvas: z.enum(["vertical", "horizontal"]),
   tokens: tokenSchema.optional(),
 });
@@ -45,21 +66,37 @@ export const calcBeatMetadata: CalculateMetadataFunction<BeatProps> = ({
   fps: 30,
 });
 
-export const Beat: React.FC<BeatProps> = ({ duration, props, tokens }) => {
-  const resolved = { ...DEFAULT_TOKENS, ...tokens };
-  const { alive, i } = useIO(0, Math.max(0, duration - EXIT_SECS));
-  const text = typeof props.text === "string" ? props.text : "Their own words";
+export const Beat: React.FC<BeatProps> = ({
+  comp,
+  start,
+  duration,
+  payoffAt,
+  props,
+  tokens,
+}) => {
+  const shared = {
+    ...props,
+    duration,
+    payoffAt: payoffAt === undefined ? undefined : payoffAt - start,
+    tokens: { ...DEFAULT_TOKENS, ...tokens },
+  };
 
-  return (
-    <AbsoluteFill
-      style={{
-        backgroundColor: "transparent",
-        fontFamily: resolved.font,
-      }}
-    >
-      <Card alive={alive} i={i} tokens={resolved}>
-        <div style={{ fontSize: 54, fontWeight: 800 }}>{text}</div>
-      </Card>
-    </AbsoluteFill>
-  );
+  switch (comp) {
+    case "KineticQuote":
+      return <KineticQuote {...(shared as KineticQuoteProps)} />;
+    case "CountUp":
+      return <CountUp {...(shared as CountUpProps)} />;
+    case "DiagramReveal":
+      return <DiagramReveal {...(shared as DiagramRevealProps)} />;
+    case "Checklist":
+      return <Checklist {...(shared as ChecklistProps)} />;
+    case "LowerThird":
+      return <LowerThird {...(shared as LowerThirdProps)} />;
+    case "ChapterCard":
+      return <ChapterCard {...(shared as ChapterCardProps)} />;
+    case "FeedStack":
+      return <FeedStack {...(shared as FeedStackProps)} />;
+    case "Collapse":
+      return <Collapse {...(shared as CollapseProps)} />;
+  }
 };
