@@ -19,6 +19,17 @@ export type DiagramRevealProps = {
   layout: "row" | "loop" | "funnel";
   duration: number;
   payoffAt?: number;
+  /**
+   * Vertical band the diagram occupies. Defaults to "lower".
+   *
+   * WHY THIS EXISTS: a centred row diagram lands squarely across a centre-framed
+   * speaker's face. Caught in production on a car-selfie vlog — "go and talk to
+   * yourself" rendered directly over her eyes. Covering the face is the one rule
+   * the whole doctrine is built on ("animate the idea, never decorate the face"),
+   * and the primitive had no way to obey it. "lower" is the safe default; opt
+   * into "center" only on footage with a genuinely empty middle.
+   */
+  placement?: "lower" | "center" | "upper";
   tokens?: Tokens;
 };
 
@@ -38,19 +49,23 @@ const pointAtNodeBorder = (source: Point, target: Point): Point => {
   return { x: target.x - dx * scale, y: target.y - dy * scale };
 };
 
+const BANDS = { upper: 0.20, center: 0.43, lower: 0.78 } as const;
+
 const positionsFor = (
   count: number,
   layout: DiagramRevealProps["layout"],
   width: number,
   height: number,
+  placement: NonNullable<DiagramRevealProps["placement"]> = "lower",
 ): Point[] => {
   if (count === 0) return [];
+  const band = BANDS[placement];
   if (layout === "loop") {
     return Array.from({ length: count }, (_, index) => {
       const angle = -Math.PI / 2 + (index / count) * Math.PI * 2;
       return {
         x: width * 0.5 + Math.cos(angle) * width * 0.3,
-        y: height * 0.42 + Math.sin(angle) * height * 0.2,
+        y: height * (band - 0.01) + Math.sin(angle) * height * 0.16,
       };
     });
   }
@@ -60,13 +75,13 @@ const positionsFor = (
       const direction = index % 2 === 0 ? -1 : 1;
       return {
         x: width * (0.5 + direction * 0.24 * (1 - progress)),
-        y: height * (0.22 + progress * 0.44),
+        y: height * (band - 0.21 + progress * 0.42),
       };
     });
   }
   return Array.from({ length: count }, (_, index) => ({
     x: width * (count === 1 ? 0.5 : 0.15 + (index / (count - 1)) * 0.7),
-    y: height * 0.43,
+    y: height * band,
   }));
 };
 
@@ -75,13 +90,14 @@ export const DiagramReveal: React.FC<DiagramRevealProps> = ({
   arrows,
   layout,
   duration,
+  placement = "lower",
   payoffAt = duration * 0.62,
   tokens = DEFAULT_TOKENS,
 }) => {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
   const { alive } = useIO(0, Math.max(0, duration - EXIT_SECS));
-  const points = positionsFor(nodes.length, layout, width, height);
+  const points = positionsFor(nodes.length, layout, width, height, placement);
 
   return (
     <AbsoluteFill
