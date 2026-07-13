@@ -40,6 +40,42 @@ For long videos this is the slow step. Run it in the background and keep working
 Force whisper with `--whisper` when the auto-subs look garbled, or when you need
 word-level precision for tight cuts.
 
+### STEP 0 — READ FOR THE ARGUMENT, NOT FOR MOMENTS. Do this FIRST.
+
+**This is the mistake that cost the most, and it was invisible until someone
+looked for it.** On a 15-minute vlog I found twelve great moments — a number, a
+gag, a tangent, a confession — and built twelve graphics. Every one was well
+made. **I never once asked what she was arguing.**
+
+She said "show up" three times: at 1:57, at 4:20, and in the closing line.
+Beginning, middle, end. That was the spine of the entire video and **it got zero
+graphics**, because I was hunting for *moments* and a thesis is not a moment.
+
+Before you select a single clip or design a single graphic:
+
+1. **Write the thesis in one sentence, in THEIR logic, not yours.** What is this
+   person actually arguing? If you can't state it, you cannot edit it — you can
+   only decorate it.
+2. **Find the repeated phrase.** Creators say their thesis three or four times
+   without noticing. `grep` the transcript for repeats. That's the spine.
+3. **Map the SETUP → PAYOFF arcs.** Her best aphorism ("you can't enjoy something
+   if you can't enjoy being a beginner") sets up her best line five minutes later
+   ("it's never embarrassing to try"). I treated the payoff as an isolated quote
+   and broke the arc. **A line that pays something off must be edited as a payoff.**
+4. **Then ask of every graphic: does this serve the argument, or just the moment?**
+
+**Do not visualise the metaphor while ignoring the lesson.** She said "it flipped
+the switch" and I built a cute toggle. The switch was her *metaphor*; the lesson
+was the framework she introduced with it ("when you feel like you're not doing
+enough, go and talk to yourself, reconnect with your purpose"). I animated the
+wrapper and dropped the contents.
+
+**The cold open must carry the STANCE, not just the hook.** "Nobody watches my
+videos, I get three likes" is a hook. Alone, it frames the video as *insecurity*.
+She reframes it herself seconds later — "I make an effort to show up for myself,
+that is effort as it is" — and *that* is what the video is about. A cold open
+that states the problem without the stance tells the wrong story.
+
 ### 2. Select (this is the part that matters)
 
 **Read the transcript and choose the moments.** Do not skip straight to cutting.
@@ -228,6 +264,77 @@ that doesn't destroy what makes it work. The rules:
 Everything else is decoration. A cutaway that isn't carrying information is a
 cutaway that's costing you attention.
 
+### Which renderer: REMOTION. The question is settled — stop re-asking it.
+
+Both Remotion and HyperFrames turn code into video. **Build in Remotion.** This
+was tested head-to-head on the same graphic, and it isn't close:
+
+| | Remotion | HyperFrames |
+|---|---|---|
+| Alpha (the whole ballgame) | `--codec=prores --prores-profile=4444 --pixel-format=yuva444p10le` → `yuva444p12le` ✅ | `--format webm` → **`yuv420p`, NO alpha** — pastes a black box over the speaker. Only `--format mov` works. |
+| Parameterised graphics | `--props '{"done":2}'` — ONE component, N renders. The workout checklist is one component rendered four times. | no clean equivalent |
+| Reuse | it's React. Components compose, take data, build into a library. | one-off HTML timelines |
+| Already installed | yes, and in production | 20 skills, 9 of which leaked into the GLOBAL skill dir on first run |
+
+HyperFrames is genuinely faster for a single linear GSAP timeline. That is not
+worth a second toolchain. **Everything we build lives in Remotion.**
+
+Working invocation — memorise it, the profile alone is NOT enough:
+
+```bash
+npx remotion render <Comp> out/<Comp>.mov \
+  --codec=prores --prores-profile=4444 \
+  --pixel-format=yuva444p10le --image-format=png
+```
+
+Then always verify: `ffprobe -show_entries stream=pix_fmt` → want `yuva*`.
+`clip.py --overlay` refuses an opaque file rather than silently ruining a clip.
+
+### Be the creative director, not the effects operator
+
+**One effect per clip is a bolted-on effect.** A motion-graphics layer is a
+LANGUAGE with a rhythm — a beat every 4–6 seconds — not a single event dropped
+into the middle of a clip. A lone 8-second graphic in a 25-second video arrives
+from nowhere and leaves; it reads as an interruption, and that is what "it looks
+weird" actually means.
+
+So render **one graphics track the full length of the clip**, with multiple beats
+inside it. Not several short overlays — one layer, like a real edit.
+
+**Put a beat in the first 3–5 seconds.** That is where retention is decided. A
+clip whose graphics start at 0:11 has already lost the people who left.
+
+**Beat structure that works** — every beat attached to something they SAY:
+
+| Beat | Job |
+|---|---|
+| 0–4s | **HOOK.** Land the claim visually the moment they make it. |
+| mid | **BUILD / FORESHADOW.** Small, quiet. Something ticks, grows, accumulates. |
+| — | **BREATHE.** Empty screen is a beat. Wall-to-wall graphics is noise. |
+| payoff | **THE TURN.** The number lands, the pile collapses, the thing breaks. |
+| end | **RELEASE.** Often nothing at all. Silence after noise is the point. |
+
+**Scan the transcript for what to VISUALIZE.** Any claim, lesson, mechanism,
+comparison, or number is a candidate:
+
+- A statistic → **a diagram of it**. She says "98% of my anxiety came from social
+  media" → a 98/2 bar. That is her thinking, made visible.
+- A thought experiment → **build the thing they ask you to imagine** ("would you
+  pay $10/month for Instagram?" → the subscription card, then DECLINED).
+- A list she rattles off → **show it accumulating**.
+- A mechanism ("the algorithm shapes you") → **show the mechanism**.
+- A release ("when you delete the app, it's gone") → **destroy what you built.**
+  Whatever the graphic assembled, take it away on the payoff line. That's what
+  makes it a story instead of an ornament.
+
+**Ambiguity is the enemy.** A ring drawn around a speaker's head looks like a
+*target*, not a meter. If a viewer has to decode what a graphic means, it has
+failed — cut it or make it literal. A plain labelled bar beats a clever
+abstraction every time.
+
+Two hard limits still apply: never restate the caption (that's decoration), and
+never cover the face (that's why they're watching).
+
 ### No B-roll? Generate the cutaway from their own frame.
 
 Most creators have no B-roll for most of what they say. `--card "START:DUR:TEXT"`
@@ -281,7 +388,8 @@ words you chose.
   **Descript** (MCP is connected; costs AI credits; note it has no local export,
   only publish-to-link).
 - To *create footage that never existed* — intros, lower-thirds, motion graphics,
-  data animations — use **Remotion** or **Hyperframes** (code → MP4).
+  data animations — use **Remotion** (React → MP4, live project at
+  `~/Building/Clients/client-UGM/ugm-sizzle`) or **Hyperframes** (HTML/CSS → MP4).
 
 Don't reach for a paid or generative tool to do a job ffmpeg does for free.
 
