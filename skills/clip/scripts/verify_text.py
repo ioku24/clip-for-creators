@@ -67,7 +67,11 @@ CODE = re.compile(
     r"[a-z]+[A-Z][a-zA-Z]*|"                        # camelCase identifiers
     r"[\w./-]+\.(tsx?|jsx?|mov|mp4|png|json|css)|"  # paths
     r"(https?|file|data):.*|"
-    r"[\d.]+ [\d.]+ (auto|[\d.]+\w*)",   # flex shorthand
+    r"[\d.]+ [\d.]+ (auto|[\d.]+\w*)|"          # flex shorthand
+    r"[\d.]+ *&& *.*|"                         # JSX guard fragments
+    r"[Mm][\d.,\-]+ *[A-Za-z][\d.,\- ]*z?|"  # SVG path data
+    r"url\(#[\w-]+\)|"                           # SVG refs
+    r"[MmLlHhVvCcSsQqTtAaZz][\d.,\-\s]*([MmLlHhVvCcSsQqTtAaZz][\d.,\-\s]*)*",  # SVG path
     re.I,
 )
 
@@ -160,9 +164,9 @@ def main() -> int:
         prop_lines, said_lines = set(), set()
         in_prop = in_said = False
         for i, ln in enumerate(lines):
-            if re.search(r"//\s*prop", ln, re.I):
+            if re.search(r"(//|/\*)\s*prop", ln, re.I):
                 in_prop, in_said = True, False
-            elif re.search(r"//\s*said\b", ln, re.I):
+            elif re.search(r"(//|/\*)\s*said\b", ln, re.I):
                 in_said, in_prop = True, False
             elif (in_prop or in_said) and (not ln.strip() or re.match(r"[)\]}]", ln)):
                 in_prop = in_said = False
